@@ -1,0 +1,6 @@
+-- HIER KOMMT DEIN OBFUSCATED CODE REIN
+-- Aktuell ist hier nur ein Platzhalter
+print("Sky Menu Loaded from Secure Vercel API")
+
+-- Kopie deines aktuellen Scripts (vereinfacht für den Test)
+-- Wenn du fertig bist, kopier einfach dein ganzes Script hier rein.
