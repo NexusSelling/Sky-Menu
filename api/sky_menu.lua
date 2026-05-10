@@ -1,3 +1,4 @@
+
 local menuOpen = false
 local inputProcessedThisFrame = false
 local menuKeybind = nil
