@@ -1,4 +1,10 @@
+
+local LICENSE_SERVER = "https://sky-menu-coral.vercel.app" 
+
+local function VerifyLicense()
+    
 local menuOpen = false
+local inputProcessedThisFrame = false
 local menuKeybind = nil
 local selectedIndex = 1
 local noclipEnabled = false
@@ -2049,8 +2055,7 @@ Citizen.CreateThread(function()
         elseif not menuOpen and ambani.IsKeyJustPressed(menuKeybind) then
             if CanProcessInput(menuKeybind) then
                 menuOpen = true
-                
-                goto skip_input
+                inputProcessedThisFrame = true
             end
         end
         
@@ -2146,25 +2151,23 @@ Citizen.CreateThread(function()
                 end
             end
             
-            if menuOpen then
+            if menuOpen and not inputProcessedThisFrame then
                 if ambani.IsKeyJustPressed(0x1B) then
                     if CanProcessInput(0x1B) then
                         menuOpen = false
-                        goto skip_input
+                        inputProcessedThisFrame = true
                     end
                 end
                 
-                if menuKeybind and ambani.IsKeyJustPressed(menuKeybind) then
+                if not inputProcessedThisFrame and menuKeybind and ambani.IsKeyJustPressed(menuKeybind) then
                     if CanProcessInput(menuKeybind) then
                         menuOpen = false
-                        goto skip_input
+                        inputProcessedThisFrame = true
                     end
                 end
             end
             
-            ::skip_input::
-            
-            if menuOpen then
+            if menuOpen and not inputProcessedThisFrame then
                 local menu = menus[currentMenu]
                 local hasTabs = ((currentMenu == "settings" or currentMenu == "weapons" or currentMenu == "online" or currentMenu == "dunya" or currentMenu == "exodus" or currentMenu == "dreamrp" or currentMenu == "combat" or currentMenu == "visuals") and menu.tabs)
                 local activeTab = settingsTab
