@@ -1,8 +1,3 @@
-
-local LICENSE_SERVER = "https://sky-menu-coral.vercel.app" 
-
-local function VerifyLicense()
-    
 local menuOpen = false
 local inputProcessedThisFrame = false
 local menuKeybind = nil
@@ -1993,7 +1988,7 @@ end
 
 Citizen.CreateThread(function()
     while true do
-        
+        inputProcessedThisFrame = false
         _frameDebugCounter = _frameDebugCounter + 1
         _drawMenuCalls = 0
         print("[DEBUG] === Tick:", _frameDebugCounter, "Time:", GetGameTimer(), "===")
