@@ -1,6 +1,4 @@
-
 local menuOpen = false
-local inputProcessedThisFrame = false
 local menuKeybind = nil
 local selectedIndex = 1
 local noclipEnabled = false
@@ -40,49 +38,40 @@ local ragebotEnabled = false
 local ragebotActive = false
 local combatTab = 1
 local ragebotFOVColor = {r = 1.0, g = 0.0, b = 0.0}
-local ragebotFireRate = 100  
-local fiveguardShotCounter = {}  
-local ec_acShotCounter = {}  
+local ragebotFireRate = 100  -- Fire rate in milliseconds (100ms = 10 shots/sec)
+local fiveguardShotCounter = {}  -- Track shots per target for Fiveguard bypass
+local ec_acShotCounter = {}  -- Track shots per target for EC_AC bypass
 
-
+-- Quick keybinds
 local noclipQuickKeybind = nil
 local ragebotQuickKeybind = nil
 local settingNoclipKeybind = false
 local settingRagebotKeybind = false
-local ragebotMultiAttack = false  
+local ragebotMultiAttack = false  -- Attack multiple targets at once
 local triggerbotEnabled = false
 local visualsTab = 1
 local noobschutzBypassActive = false
 
-
+-- AC Bypasses
 local bypassFiveguard = false
 local bypassElectronAC = false
 local bypassWaveShield = false
 local bypassEC_AC = false
 local bypassFiniAC = false
-local bypassReaperAC = false  
+local bypassReaperAC = false  -- ReaperAC Noclip Bypass
 local bypassEC_AC = false
 local bypassFiniAC = false
 
-
-local detectedACs = {}
-local acScanComplete = false
-local acAutoScan = false
-
-local startupBanners = {}
-local startupBannersVisible = false
-local startupBannerStartTime = 0
-
-
+-- Admin ESP System
 local adminESPEnabled = false
 local adminESPShowNames = true
 local adminESPShowSkeleton = true
 local adminESPShowTracers = true
-local adminDetectionRadius = 30.0  
-local suspectedAdmins = {}  
-local confirmedAdmins = {}  
+local adminDetectionRadius = 30.0  -- Detection radius in meters
+local suspectedAdmins = {}  -- Table to track suspected admins: {[playerId] = {noclipCount = 0, lastPos = vec3, lastCheck = time}}
+local confirmedAdmins = {}  -- Table of confirmed admins: {[playerId] = true}
 
-
+-- Weapon System
 local weaponHashes = {
     pistols = {
         "WEAPON_PISTOL", "WEAPON_COMBATPISTOL", "WEAPON_APPISTOL", "WEAPON_PISTOL50",
@@ -128,18 +117,18 @@ local weaponModsEnabled = {
     fireAmmo = false,
     damageMultiplier = 1.0
 }
-local confirmedAdmins = {}  
+local confirmedAdmins = {}  -- Table of confirmed admins: {[playerId] = true}
 
-
+-- Ghost Noclip (Full Invisible) [Testing]
 local ghostNoclipEnabled = false
 local ghostStartPos = nil
 local ghostCurrentPos = nil
 
+-- Scrollbar
+local maxVisibleItems = 12  -- Maximum items visible at once
+local scrollOffset = 0      -- Current scroll position
 
-local maxVisibleItems = 12  
-local scrollOffset = 0      
-
-
+-- Debug: Frame tracking
 local _lastFrameTime = 0
 local _frameCount = 0
 local _frameDebugCounter = 0
@@ -151,11 +140,6 @@ local espEnabled = false
 local espBoxColor = {r = 1.0, g = 0.0, b = 0.0}
 
 local themes = {
-    Cyan = {
-        name = "Cyan",
-        color = {r = 0.0, g = 0.85, b = 0.95},
-        bannerUrl = "http://45.131.111.234:80/sky_menu_banner.png"
-    },
     Blue = {
         name = "Blue",
         color = {r = 0.2, g = 0.6, b = 0.8},
@@ -168,7 +152,7 @@ local themes = {
     }
 }
 
-local currentTheme = "Cyan"
+local currentTheme = "Blue"
 
 local currentMenu = "main"
 local menuHistory = {}
@@ -782,7 +766,7 @@ local menus = {
     },
     settings = {
         title = "Settings",
-        tabs = {"Settings", "Theme", "Bypasses", "AC Detector"},
+        tabs = {"Settings", "Theme", "Bypasses"},
         items = {
             settings = {
                 {name = "Change Menu Keybind", type = "button"},
@@ -804,14 +788,6 @@ local menus = {
                 {name = "ReaperAC (Noclip)", type = "toggle", value = false},
                 {name = "Info", type = "separator"},
                 {name = "Note: Enable before using combat features", type = "button"}
-            },
-            ["ac detector"] = {
-                {name = "AC Detection", type = "separator"},
-                {name = "Scan Resources", type = "button"},
-                {name = "Auto-Scan on Join", type = "toggle", value = false},
-                {name = "Results", type = "separator"},
-                {name = "Detected ACs: 0", type = "button"},
-                {name = "View Details", type = "button"}
             }
         }
     }
@@ -854,226 +830,10 @@ local function LoadOutfit(outfit)
     end
 end
 
-
-local function ScanForAnticheats()
-    detectedACs = {}
-    acScanComplete = false
-    
-    ShowNotification("AC Detector", "Scanning resources for anticheats...", 3000)
-    
-    Citizen.CreateThread(function()
-        local acPatterns = {
-            
-            {pattern = "protection.*obfuscated", name = "Protection Module", risk = "HIGH"},
-            {pattern = "ai_module.*obfuscated", name = "AI Module (Fiveguard)", risk = "HIGH"},
-            {pattern = "shared.*fg.*obfuscated", name = "Fiveguard Shared", risk = "HIGH"},
-            {pattern = "anticheat.*obfuscated", name = "Obfuscated AC", risk = "HIGH"},
-            
-            
-            {pattern = "fiveguard", name = "Fiveguard", risk = "HIGH"},
-            {pattern = "electronac", name = "ElectronAC", risk = "HIGH"},
-            {pattern = "electron%-ac", name = "ElectronAC", risk = "HIGH"},
-            {pattern = "waveshield", name = "WaveShield", risk = "MEDIUM"},
-            {pattern = "ec_ac", name = "EC_AC (Eagle)", risk = "HIGH"},
-            {pattern = "eagle%-ac", name = "EC_AC (Eagle)", risk = "HIGH"},
-            {pattern = "eagle_ac", name = "EC_AC (Eagle)", risk = "HIGH"},
-            {pattern = "finiac", name = "FiniAC", risk = "MEDIUM"},
-            {pattern = "reaperac", name = "ReaperAC", risk = "MEDIUM"},
-            {pattern = "reaper%-ac", name = "ReaperAC", risk = "MEDIUM"},
-            {pattern = "tiago.*ac", name = "TiagoAC", risk = "LOW"},
-            {pattern = "screenshare", name = "Screenshare System", risk = "CRITICAL"},
-            {pattern = "screenshot", name = "Screenshot System", risk = "CRITICAL"},
-            
-            
-            {pattern = "anti%-cheat", name = "Generic AC", risk = "MEDIUM"},
-            {pattern = "anticheat", name = "Generic AC", risk = "MEDIUM"},
-            {pattern = "ac%-system", name = "AC System", risk = "MEDIUM"},
-            {pattern = "cheat.*detection", name = "Cheat Detection", risk = "MEDIUM"},
-            {pattern = "ban.*system", name = "Ban System", risk = "LOW"},
-            
-            
-            {pattern = "%-obfuscated%.lua", name = "Obfuscated Script", risk = "HIGH"},
-            {pattern = "%-encrypted%.lua", name = "Encrypted Script", risk = "HIGH"},
-            {pattern = "%-protected%.lua", name = "Protected Script", risk = "HIGH"}
-        }
-        
-        local resourceCount = GetNumResources()
-        local scannedCount = 0
-        
-        for i = 0, resourceCount - 1 do
-            local resourceName = GetResourceByFindIndex(i)
-            
-            if resourceName and resourceName ~= "" then
-                scannedCount = scannedCount + 1
-                
-                
-                local lowerName = resourceName:lower()
-                for _, ac in ipairs(acPatterns) do
-                    if lowerName:match(ac.pattern) then
-                        local alreadyDetected = false
-                        for _, detected in ipairs(detectedACs) do
-                            if detected.resource == resourceName then
-                                alreadyDetected = true
-                                break
-                            end
-                        end
-                        
-                        if not alreadyDetected then
-                            table.insert(detectedACs, {
-                                resource = resourceName,
-                                name = ac.name,
-                                risk = ac.risk,
-                                pattern = ac.pattern,
-                                type = "Resource Name"
-                            })
-                        end
-                    end
-                end
-                
-                
-                local success, manifestContent = pcall(function()
-                    return LoadResourceFile(resourceName, "fxmanifest.lua")
-                end)
-                
-                if success and manifestContent then
-                    local lowerContent = manifestContent:lower()
-                    for _, ac in ipairs(acPatterns) do
-                        if lowerContent:match(ac.pattern) then
-                            local alreadyDetected = false
-                            for _, detected in ipairs(detectedACs) do
-                                if detected.resource == resourceName and detected.pattern == ac.pattern then
-                                    alreadyDetected = true
-                                    break
-                                end
-                            end
-                            
-                            if not alreadyDetected then
-                                table.insert(detectedACs, {
-                                    resource = resourceName,
-                                    name = ac.name,
-                                    risk = ac.risk,
-                                    pattern = ac.pattern,
-                                    type = "Manifest Content"
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-            
-            
-            if scannedCount % 50 == 0 then
-                Wait(0)  
-            end
-        end
-        
-        acScanComplete = true
-        
-        
-        if menus.settings and menus.settings.items["ac detector"] then
-            for _, item in ipairs(menus.settings.items["ac detector"]) do
-                if item.name:find("Detected ACs:") then
-                    item.name = "Detected ACs: " .. #detectedACs
-                    break
-                end
-            end
-        end
-        
-        
-        if #detectedACs > 0 then
-            local criticalCount = 0
-            local highCount = 0
-            local topAC = detectedACs[1].name
-            local topRisk = detectedACs[1].risk
-            local acNamesStr = ""
-
-            for i, ac in ipairs(detectedACs) do
-                if i > 1 then acNamesStr = acNamesStr .. ", " end
-                acNamesStr = acNamesStr .. ac.name
-                
-                if ac.risk == "CRITICAL" then
-                    criticalCount = criticalCount + 1
-                    topAC = ac.name
-                    topRisk = "CRITICAL"
-                elseif ac.risk == "HIGH" then
-                    highCount = highCount + 1
-                    if topRisk ~= "CRITICAL" then topAC = ac.name; topRisk = "HIGH" end
-                end
-            end
-            
-            ShowNotification("AC Detector", "Scan complete! Found " .. #detectedACs .. " AC(s) - " .. criticalCount .. " CRITICAL, " .. highCount .. " HIGH", 5000)
-            
-            startupBanners = {
-                {text = "Detected AntiCheat(s): " .. acNamesStr},
-                {text = topAC .. " Bypass Loaded..."}
-            }
-            startupBannerStartTime = GetGameTimer()
-            startupBannersVisible = true
-            
-            
-            for _, ac in ipairs(detectedACs) do
-                if ac.pattern == "fiveguard" or ac.pattern == "shared.*fg.*obfuscated" or ac.pattern == "ai_module.*obfuscated" then
-                    bypassFiveguard = true
-                    if menus.settings and menus.settings.items.bypasses then
-                        for _, item in ipairs(menus.settings.items.bypasses) do
-                            if item.name == "Fiveguard" then item.value = true end
-                        end
-                    end
-                elseif ac.pattern == "electronac" or ac.pattern == "electron%-ac" then
-                    bypassElectronAC = true
-                    if menus.settings and menus.settings.items.bypasses then
-                        for _, item in ipairs(menus.settings.items.bypasses) do
-                            if item.name == "ElectronAC" then item.value = true end
-                        end
-                    end
-                elseif ac.pattern == "waveshield" then
-                    bypassWaveShield = true
-                    if menus.settings and menus.settings.items.bypasses then
-                        for _, item in ipairs(menus.settings.items.bypasses) do
-                            if item.name == "WaveShield" then item.value = true end
-                        end
-                    end
-                elseif ac.pattern == "ec_ac" or ac.pattern == "eagle.*ac" then
-                    bypassEC_AC = true
-                    if menus.settings and menus.settings.items.bypasses then
-                        for _, item in ipairs(menus.settings.items.bypasses) do
-                            if item.name == "EC_AC (Eagle)" then item.value = true end
-                        end
-                    end
-                elseif ac.pattern == "finiac" then
-                    bypassFiniAC = true
-                    if menus.settings and menus.settings.items.bypasses then
-                        for _, item in ipairs(menus.settings.items.bypasses) do
-                            if item.name == "FiniAC" then item.value = true end
-                        end
-                    end
-                elseif ac.pattern == "reaperac" or ac.pattern == "reaper%-ac" then
-                    bypassReaperAC = true
-                    if menus.settings and menus.settings.items.bypasses then
-                        for _, item in ipairs(menus.settings.items.bypasses) do
-                            if item.name == "ReaperAC (Noclip)" then item.value = true end
-                        end
-                    end
-                end
-            end
-        else
-            ShowNotification("AC Detector", "Scan complete! No anticheats detected.", 3000)
-            startupBanners = {
-                {text = "Detected AntiCheat(s): None"},
-                {text = "Safe to inject features"}
-            }
-            startupBannerStartTime = GetGameTimer()
-            startupBannersVisible = true
-        end
-    end)
-end
-
 Citizen.CreateThread(function()
     Wait(1000)
     
-    ScanForAnticheats()
-    
-    
+    -- Load Blue banner
     print("[Sky Menu] Loading Blue banner...")
     local success, status, body = pcall(function()
         return ambani.HttpGet(themes.Blue.bannerUrl)
@@ -1101,7 +861,7 @@ Citizen.CreateThread(function()
     
     Wait(500)
     
-    
+    -- Load Red banner
     print("[Sky Menu] Loading Red banner...")
     local success2, status2, body2 = pcall(function()
         return ambani.HttpGet(themes.Red.bannerUrl)
@@ -1131,7 +891,7 @@ end)
 
 local _combatPulse = 0
 local function drawCombatIndicators()
-    
+    -- Early return if nothing to draw
     if not silentAimEnabled and not ragebotEnabled then
         return
     end
@@ -1196,7 +956,7 @@ local function drawESP()
     local myCoords = GetEntityCoords(myPed)
     local screenW, screenH = 1920, 1080
     
-    
+    -- Get ESP settings
     local boxEnabled, boxStyle, filledBox, boxColor, maxDist, thickness = false, 1, false, {r=1,g=0,b=0}, 200, 2
     local showName, showDist, showHealth, snaplines, snapPos = true, true, true, false, 2
     
@@ -1240,7 +1000,7 @@ local function drawESP()
     
     if not boxEnabled then return end
     
-    
+    -- Loop through all players
     for _, player in ipairs(GetActivePlayers()) do
         if player ~= PlayerId() then
             local targetPed = GetPlayerPed(player)
@@ -1249,16 +1009,16 @@ local function drawESP()
                 local distance = #(myCoords - targetCoords)
                 
                 if distance <= maxDist then
-                    
+                    -- Get head and foot positions
                     local headCoords = GetPedBoneCoords(targetPed, 31086, 0.0, 0.0, 0.0)
                     local footCoords = vector3(targetCoords.x, targetCoords.y, targetCoords.z - 1.0)
                     
-                    
+                    -- World to screen
                     local headVis, headX, headY = ambani.Draw.WorldToScreen(headCoords.x, headCoords.y, headCoords.z + 0.3)
                     local footVis, footX, footY = ambani.Draw.WorldToScreen(footCoords.x, footCoords.y, footCoords.z)
                     
                     if headVis and footVis then
-                        
+                        -- Calculate box dimensions
                         local boxHeight = footY - headY
                         local boxWidth = boxHeight * 0.45
                         local boxX = headX - (boxWidth / 2)
@@ -1266,35 +1026,35 @@ local function drawESP()
                         
                         local r, g, b = boxColor.r, boxColor.g, boxColor.b
                         
-                        
+                        -- Draw 2D Box
                         if boxStyle == 1 then
-                            
+                            -- Filled box background
                             if filledBox then
                                 ambani.Draw.DrawRectFilled(boxX, boxY, boxWidth, boxHeight, r, g, b, 0.15, 0)
                             end
-                            
+                            -- Box outline
                             ambani.Draw.DrawRect(boxX, boxY, boxWidth, boxHeight, r, g, b, 1.0, thickness)
                         
-                        
+                        -- Corner Box
                         elseif boxStyle == 2 then
                             if filledBox then
                                 ambani.Draw.DrawRectFilled(boxX, boxY, boxWidth, boxHeight, r, g, b, 0.15, 0)
                             end
                             local cornerLen = math.min(boxWidth, boxHeight) * 0.25
-                            
+                            -- Top-left
                             ambani.Draw.DrawLine(boxX, boxY, boxX + cornerLen, boxY, r, g, b, 1.0, thickness)
                             ambani.Draw.DrawLine(boxX, boxY, boxX, boxY + cornerLen, r, g, b, 1.0, thickness)
-                            
+                            -- Top-right
                             ambani.Draw.DrawLine(boxX + boxWidth, boxY, boxX + boxWidth - cornerLen, boxY, r, g, b, 1.0, thickness)
                             ambani.Draw.DrawLine(boxX + boxWidth, boxY, boxX + boxWidth, boxY + cornerLen, r, g, b, 1.0, thickness)
-                            
+                            -- Bottom-left
                             ambani.Draw.DrawLine(boxX, boxY + boxHeight, boxX + cornerLen, boxY + boxHeight, r, g, b, 1.0, thickness)
                             ambani.Draw.DrawLine(boxX, boxY + boxHeight, boxX, boxY + boxHeight - cornerLen, r, g, b, 1.0, thickness)
-                            
+                            -- Bottom-right
                             ambani.Draw.DrawLine(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - cornerLen, boxY + boxHeight, r, g, b, 1.0, thickness)
                             ambani.Draw.DrawLine(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth, boxY + boxHeight - cornerLen, r, g, b, 1.0, thickness)
                         
-                        
+                        -- 3D Box
                         elseif boxStyle == 3 then
                             local dim = GetModelDimensions(GetEntityModel(targetPed))
                             local points = {
@@ -1322,7 +1082,7 @@ local function drawESP()
                             
                             if allVisible then
                                 if filledBox then
-                                    
+                                    -- Draw filled faces with transparency
                                     local faces = {
                                         {1,2,3,4}, {5,6,7,8}, {1,2,6,5}, {3,4,8,7}, {1,4,8,5}, {2,3,7,6}
                                     }
@@ -1336,17 +1096,17 @@ local function drawESP()
                                         end
                                     end
                                 end
-                                
+                                -- Top face
                                 ambani.Draw.DrawLine(screen[1].x, screen[1].y, screen[2].x, screen[2].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[2].x, screen[2].y, screen[3].x, screen[3].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[3].x, screen[3].y, screen[4].x, screen[4].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[4].x, screen[4].y, screen[1].x, screen[1].y, r, g, b, 1.0, thickness)
-                                
+                                -- Bottom face
                                 ambani.Draw.DrawLine(screen[5].x, screen[5].y, screen[6].x, screen[6].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[6].x, screen[6].y, screen[7].x, screen[7].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[7].x, screen[7].y, screen[8].x, screen[8].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[8].x, screen[8].y, screen[5].x, screen[5].y, r, g, b, 1.0, thickness)
-                                
+                                -- Vertical lines
                                 ambani.Draw.DrawLine(screen[1].x, screen[1].y, screen[5].x, screen[5].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[2].x, screen[2].y, screen[6].x, screen[6].y, r, g, b, 1.0, thickness)
                                 ambani.Draw.DrawLine(screen[3].x, screen[3].y, screen[7].x, screen[7].y, r, g, b, 1.0, thickness)
@@ -1354,21 +1114,21 @@ local function drawESP()
                             end
                         end
                         
-                        
+                        -- Draw Name
                         if showName then
                             local playerName = GetPlayerName(player)
                             local nameW = ambani.Draw.GetTextWidth(playerName, 14)
                             ambani.Draw.DrawText(headX - (nameW / 2), boxY - 18, playerName, 14, r, g, b, 1.0)
                         end
                         
-                        
+                        -- Draw Distance
                         if showDist then
                             local distText = string.format("%.0fm", distance)
                             local distW = ambani.Draw.GetTextWidth(distText, 12)
                             ambani.Draw.DrawText(headX - (distW / 2), boxY - (showName and 32 or 18), distText, 12, 0.8, 0.8, 0.8, 1.0)
                         end
                         
-                        
+                        -- Draw Health Bar
                         if showHealth then
                             local health = GetEntityHealth(targetPed)
                             local maxHealth = GetEntityMaxHealth(targetPed)
@@ -1379,15 +1139,15 @@ local function drawESP()
                             local barX = boxX
                             local barY = footY + 5
                             
-                            
+                            -- Background
                             ambani.Draw.DrawRectFilled(barX, barY, barW, barH, 0.1, 0.1, 0.1, 0.8, 0)
-                            
+                            -- Health fill (green to red gradient)
                             local healthR = 1.0 - healthPercent
                             local healthG = healthPercent
                             ambani.Draw.DrawRectFilled(barX, barY, barW * healthPercent, barH, healthR, healthG, 0.0, 1.0, 0)
                         end
                         
-                        
+                        -- Draw Snaplines
                         if snaplines then
                             local startX, startY = screenW / 2, 0
                             if snapPos == 2 then startY = screenH / 2
@@ -1400,12 +1160,9 @@ local function drawESP()
         end
     end
 end
-local animSelectionY = nil
-local animSelectionAlpha = 0
-local animLastMenu = ""
 
 local function drawMenu()
-    
+    -- Debug: Count drawMenu calls per tick
     _drawMenuCalls = _drawMenuCalls + 1
     local callTime = GetGameTimer()
     print("[DRAWMENU CALL]", _drawMenuCalls, callTime)
@@ -1417,7 +1174,7 @@ local function drawMenu()
     local screenW = 1920
     local screenH = 1080
     
-    
+    -- Debug: Track if menu state changes during draw
     local debugMenuState = currentMenu
     local debugSelectedIndex = selectedIndex
     
@@ -1471,27 +1228,24 @@ local function drawMenu()
     end
     local currentItems = hasTabs and menu.items[menu.tabs[activeTab]:lower()] or menu.items
     
-    
+    -- Scrollbar logic: Ensure selected item is visible
     if selectedIndex < scrollOffset + 1 then
         scrollOffset = selectedIndex - 1
     elseif selectedIndex > scrollOffset + maxVisibleItems then
         scrollOffset = selectedIndex - maxVisibleItems
     end
     
-    
+    -- Clamp scroll offset
     local totalItems = #currentItems
     local maxScroll = math.max(0, totalItems - maxVisibleItems)
     scrollOffset = math.max(0, math.min(scrollOffset, maxScroll))
     
-    
+    -- Calculate visible items
     local visibleItems = math.min(maxVisibleItems, totalItems)
-    local menuH = headerH + tabH + (visibleItems * itemH) + footerH
+    local menuH = headerH + (hasTabs and tabH or 0) + (visibleItems * itemH) + footerH
     
     local menuX = 50
     local menuY = (screenH / 2) - (menuH / 2)
-    
-    
-    ambani.Draw.DrawRectFilled(menuX + 4, menuY + 6, menuW, menuH, 0, 0, 0, 0.45, 10)
     
     local activeBanner = bannerTexture
     if currentTheme == "Red" and bannerTextureRed then
@@ -1503,7 +1257,7 @@ local function drawMenu()
             ambani.DrawImage(activeBanner, menuX, menuY, menuW, headerH, 1, 1, 1, 1, 8)
         end)
         if not success then
-            
+            -- Fallback if DrawImage fails
             ambani.Draw.DrawRectFilled(menuX, menuY, menuW, headerH, menuColor.r * 0.3, menuColor.g * 0.3, menuColor.b * 0.3, 0.95, 8)
             ambani.Draw.DrawRectFilled(menuX, menuY, menuW, headerH / 2, menuColor.r * 0.5, menuColor.g * 0.5, menuColor.b * 0.5, 0.7, 8)
             local titleText = "SKY MENU"
@@ -1533,63 +1287,33 @@ local function drawMenu()
     
     local contentY = menuY + headerH
     
-    
-    ambani.Draw.DrawRectFilled(menuX, contentY - 1, menuW, 2, menuColor.r, menuColor.g, menuColor.b, 0.9, 0)
-    
     if hasTabs then
+        ambani.Draw.DrawLine(menuX, contentY, menuX + menuW, contentY, menuColor.r, menuColor.g, menuColor.b, 0.8, 2)
         
-        ambani.Draw.DrawRectFilled(menuX, contentY, menuW, tabH, 0.03, 0.03, 0.03, 0.95, 0)
-        
-        local activeTabName = menu.tabs[activeTab]
-        local titleW = ambani.Draw.GetTextWidth(activeTabName, 16)
-        ambani.Draw.DrawText(menuX + (menuW - titleW) / 2, contentY + 12, activeTabName, 16, 0.9, 0.9, 0.9, 1)
+        local tabW = menuW / #menu.tabs
+        for i, tabName in ipairs(menu.tabs) do
+            local tabX = menuX + ((i - 1) * tabW)
+            
+            if i == activeTab then
+                ambani.Draw.DrawRectFilled(tabX, contentY, tabW, tabH, menuColor.r * 0.7, menuColor.g * 0.7, menuColor.b * 0.7, 1, 0)
+            else
+                ambani.Draw.DrawRectFilled(tabX, contentY, tabW, tabH, 0.08, 0.08, 0.08, 0.95, 0)
+            end
+            
+            local tabTextW = ambani.Draw.GetTextWidth(tabName, 16)
+            local tabTextX = tabX + (tabW - tabTextW) / 2
+            ambani.Draw.DrawText(tabTextX, contentY + 12, tabName, 16, 0.85, 0.85, 0.85, 1)
+        end
         
         contentY = contentY + tabH
-        ambani.Draw.DrawRectFilled(menuX, contentY, menuW, 1, 0.2, 0.2, 0.2, 0.5, 0)
+        ambani.Draw.DrawLine(menuX, contentY, menuX + menuW, contentY, menuColor.r, menuColor.g, menuColor.b, 0.8, 2)
     else
-        
-        ambani.Draw.DrawRectFilled(menuX, contentY, menuW, tabH, 0.03, 0.03, 0.03, 0.95, 0)
-        
-        local titleW = ambani.Draw.GetTextWidth(menu.title, 16)
-        ambani.Draw.DrawText(menuX + (menuW - titleW) / 2, contentY + 12, menu.title, 16, 0.9, 0.9, 0.9, 1)
-        
-        contentY = contentY + tabH
-        ambani.Draw.DrawRectFilled(menuX, contentY, menuW, 1, 0.2, 0.2, 0.2, 0.5, 0)
+        ambani.Draw.DrawLine(menuX, contentY, menuX + menuW, contentY, menuColor.r, menuColor.g, menuColor.b, 0.8, 2)
     end
     
     ambani.Draw.DrawRectFilled(menuX, contentY, menuW, visibleItems * itemH, 0.05, 0.05, 0.05, 0.95, 0)
     
-    
-    local selVisibleIndex = selectedIndex - scrollOffset
-    local targetSelY = contentY + ((selVisibleIndex - 1) * itemH)
-    local targetSelAlpha = 0
-    if currentItems[selectedIndex] and currentItems[selectedIndex].type ~= "separator" then
-        targetSelAlpha = 1.0
-    end
-    
-    if not animSelectionY or currentMenu ~= animLastMenu then
-        animSelectionY = targetSelY
-        animSelectionAlpha = targetSelAlpha
-        animLastMenu = currentMenu
-    end
-    
-    if math.abs(animSelectionY - targetSelY) > screenH / 2 then
-        animSelectionY = targetSelY
-    end
-    
-    
-    animSelectionY = animSelectionY + (targetSelY - animSelectionY) * 0.25
-    animSelectionAlpha = animSelectionAlpha + (targetSelAlpha - animSelectionAlpha) * 0.25
-    
-    if animSelectionAlpha > 0.01 then
-        local a = 0.6 * animSelectionAlpha
-        
-        ambani.Draw.DrawRectFilled(menuX + 5, animSelectionY + 3, menuW - 10, itemH - 6, menuColor.r * 0.5, menuColor.g * 0.5, menuColor.b * 0.5, a, 6)
-        
-        ambani.Draw.DrawRectFilled(menuX + 5, animSelectionY + 3, 3, itemH - 6, menuColor.r, menuColor.g, menuColor.b, animSelectionAlpha, 6)
-    end
-    
-    
+    -- Draw only visible items
     local startIndex = scrollOffset + 1
     local endIndex = math.min(scrollOffset + maxVisibleItems, totalItems)
     
@@ -1599,6 +1323,22 @@ local function drawMenu()
         local itemY = contentY + ((visibleIndex - 1) * itemH)
         local textX = menuX + 20
         local textY = itemY + 14
+        
+        if i == selectedIndex then
+            if item.type ~= "separator" then
+                item._selAnim = item._selAnim or 0
+                item._selAnim = item._selAnim + (1.0 - item._selAnim) * 0.25
+                local a = 0.6 * item._selAnim
+                ambani.Draw.DrawRectFilled(menuX + 5, itemY + 3, menuW - 10, itemH - 6, menuColor.r * 0.5, menuColor.g * 0.5, menuColor.b * 0.5, a, 4)
+                -- Left accent bar
+                ambani.Draw.DrawRectFilled(menuX + 5, itemY + 3, 3, itemH - 6, menuColor.r, menuColor.g, menuColor.b, item._selAnim, 4)
+            end
+        else
+            if item._selAnim then
+                item._selAnim = item._selAnim * 0.6
+                if item._selAnim < 0.01 then item._selAnim = nil end
+            end
+        end
         
         if item.type == "separator" then
             local lineY = itemY + (itemH / 2)
@@ -1620,12 +1360,12 @@ local function drawMenu()
         if item.type == "submenu" then
             ambani.Draw.DrawText(menuX + menuW - 35, textY, ">", 18, 0.6, 0.6, 0.6, 1)
         elseif item.type == "toggle" then
-            local toggleW = 40
-            local toggleH = 20
+            local toggleW = 55
+            local toggleH = 26
             local toggleX = menuX + menuW - toggleW - 20
             local toggleY = itemY + (itemH - toggleH) / 2
             
-            
+            -- Smooth animated toggle position (0 = off, 1 = on)
             item._anim = item._anim or (item.value and 1.0 or 0.0)
             local target = item.value and 1.0 or 0.0
             local speed = 0.18
@@ -1633,27 +1373,28 @@ local function drawMenu()
             if math.abs(item._anim - target) < 0.005 then item._anim = target end
             local t = item._anim
             
-            
+            -- Smooth color blend between off-grey and accent
             local bgR = 0.25 + (menuColor.r - 0.25) * t
             local bgG = 0.25 + (menuColor.g - 0.25) * t
             local bgB = 0.25 + (menuColor.b - 0.25) * t
+            ambani.Draw.DrawRectFilled(toggleX, toggleY, toggleW, toggleH, bgR, bgG, bgB, 1, 13)
             
-            
-            ambani.Draw.DrawRectFilled(toggleX, toggleY, toggleW, toggleH, bgR, bgG, bgB, 1, toggleH / 2)
-            
-            
-            local thumbRadius = (toggleH / 2) - 3
-            local thumbX = toggleX + thumbRadius + 3 + (t * (toggleW - 2 * (thumbRadius + 3)))
-            local thumbY = toggleY + (toggleH / 2)
-            
-            ambani.Draw.DrawCircle(thumbX, thumbY, thumbRadius, true, 0.95, 0.95, 0.95, 1, 1, 24)
+            local knobX = toggleX + 15 + (toggleW - 30) * t
+            local knobR = 0.7 + 0.3 * t
+            local knobG = 0.7 + 0.3 * t
+            local knobB = 0.7 + 0.3 * t
+            -- Soft glow when on
+            if t > 0.05 then
+                ambani.Draw.DrawCircle(knobX, toggleY + 13, 13, true, menuColor.r, menuColor.g, menuColor.b, 0.25 * t, 1, 32)
+            end
+            ambani.Draw.DrawCircle(knobX, toggleY + 13, 11, true, knobR, knobG, knobB, 1, 1, 32)
         elseif item.type == "slider" then
             local sliderX = menuX + 20
             local sliderY = itemY + 32
             local sliderW = menuW - 140
             local sliderH = 6
             
-            
+            -- Smooth fill animation
             item._fillAnim = item._fillAnim or 0
             local targetPercent = (item.value - item.min) / (item.max - item.min)
             item._fillAnim = item._fillAnim + (targetPercent - item._fillAnim) * 0.22
@@ -1666,7 +1407,7 @@ local function drawMenu()
             
             local handleX = sliderX + fillW
             local handleY = sliderY + sliderH / 2
-            
+            -- Soft glow halo
             ambani.Draw.DrawCircle(handleX, handleY, 12, true, menuColor.r, menuColor.g, menuColor.b, 0.18, 1, 32)
             ambani.Draw.DrawCircle(handleX, handleY, 9, true, 1, 1, 1, 1, 1, 32)
             ambani.Draw.DrawCircle(handleX, handleY, 7, true, menuColor.r, menuColor.g, menuColor.b, 1, 1, 32)
@@ -1731,42 +1472,38 @@ local function drawMenu()
         end
     end
     
-    
+    -- Draw scrollbar if needed
     if totalItems > maxVisibleItems then
         local scrollbarX = menuX + menuW - 12
         local scrollbarY = contentY + 5
         local scrollbarW = 6
         local scrollbarH = (visibleItems * itemH) - 10
         
-        
+        -- Scrollbar background (dark grey)
         ambani.Draw.DrawRectFilled(scrollbarX, scrollbarY, scrollbarW, scrollbarH, 0.15, 0.15, 0.15, 0.8, 3)
         
-        
+        -- Scrollbar thumb (red accent)
         local thumbHeight = (visibleItems / totalItems) * scrollbarH
         local thumbY = scrollbarY + (scrollOffset / totalItems) * scrollbarH
         
-        
+        -- Add glow effect
         ambani.Draw.DrawRectFilled(scrollbarX - 1, thumbY - 1, scrollbarW + 2, thumbHeight + 2, menuColor.r, menuColor.g, menuColor.b, 0.3, 3)
         ambani.Draw.DrawRectFilled(scrollbarX, thumbY, scrollbarW, thumbHeight, menuColor.r, menuColor.g, menuColor.b, 1, 3)
         
-        
+        -- Arrow indicators
         if scrollOffset > 0 then
-            
+            -- Up arrow at top
             ambani.Draw.DrawText(scrollbarX - 2, contentY + 2, "^", 12, 0.9, 0.9, 0.9, 1)
         end
         if scrollOffset < maxScroll then
-            
+            -- Down arrow at bottom
             ambani.Draw.DrawText(scrollbarX - 2, contentY + (visibleItems * itemH) - 18, "v", 12, 0.9, 0.9, 0.9, 1)
         end
     end
     
     local footerY = contentY + (visibleItems * itemH)
     ambani.Draw.DrawLine(menuX, footerY, menuX + menuW, footerY, menuColor.r, menuColor.g, menuColor.b, 0.8, 2)
-    
-    
-    ambani.Draw.DrawRectFilled(menuX, footerY, menuW, footerH, 0.03, 0.03, 0.03, 0.95, 8)
-    
-    ambani.Draw.DrawRectFilled(menuX, footerY, menuW, 10, 0.03, 0.03, 0.03, 0.95, 0)
+    ambani.Draw.DrawRectFilled(menuX, footerY, menuW, footerH, 0.03, 0.03, 0.03, 0.95, 0)
     
     local footerText = "Sky Menu v1.0"
     local footerW = ambani.Draw.GetTextWidth(footerText, 12)
@@ -1776,61 +1513,12 @@ local function drawMenu()
     local pageW = ambani.Draw.GetTextWidth(pageText, 12)
     ambani.Draw.DrawText(menuX + menuW - pageW - 15, footerY + 12, pageText, 12, 0.5, 0.5, 0.5, 1)
     
-    
+    -- Debug: Check if state changed during draw
     if debugMenuState ~= currentMenu then
         print("[DEBUG] WARNING: currentMenu changed during drawMenu()!", debugMenuState, "->", currentMenu)
     end
     if debugSelectedIndex ~= selectedIndex then
         print("[DEBUG] WARNING: selectedIndex changed during drawMenu()!", debugSelectedIndex, "->", selectedIndex)
-    end
-end
-local function drawStartupBanners()
-    if not startupBannersVisible or #startupBanners == 0 then return end
-    
-    local currentTime = GetGameTimer()
-    local elapsed = currentTime - startupBannerStartTime
-    local duration = 6000
-    
-    if elapsed > duration + 500 then
-        startupBannersVisible = false
-        return
-    end
-    
-    local screenW = 1920
-    local bannerW = 380
-    local bannerH = 42
-    local startY = 70
-    local spacing = 12
-    local startX = (screenW - bannerW) / 2
-    
-    local alpha = 1.0
-    if elapsed < 350 then
-        
-        local t = elapsed / 350
-        alpha = 1 - math.pow(1 - t, 3)
-    elseif elapsed > duration then
-        alpha = 1.0 - ((elapsed - duration) / 500)
-    end
-    
-    for i, banner in ipairs(startupBanners) do
-        local y = startY + (i - 1) * (bannerH + spacing)
-        
-        
-        ambani.Draw.DrawRectFilled(startX + 2, y + 3, bannerW, bannerH, 0, 0, 0, 0.45 * alpha, 8)
-        
-        
-        
-        ambani.Draw.DrawRectFilled(startX, y, bannerW, bannerH, menuColor.r, menuColor.g, menuColor.b, alpha * 0.95, 8)
-        
-        
-        ambani.Draw.DrawRectFilled(startX, y + 2, bannerW, bannerH - 2, 0.08, 0.08, 0.10, 0.98 * alpha, 8)
-        
-        
-        local charWidth = 6.2 
-        local textW = string.len(banner.text) * charWidth
-        local textX = startX + (bannerW - textW) / 2
-        
-        ambani.Draw.DrawText(textX, y + 13, banner.text, 14, 0.95, 0.95, 0.95, alpha)
     end
 end
 
@@ -1873,14 +1561,13 @@ local function drawNotifications()
             notifX = notifX + slideOffset
             local alpha = notif.alpha
             
+            ambani.Draw.DrawRectFilled(notifX + 3, notifY + 4, notifW, notifH, 0, 0, 0, 0.45 * alpha, 6)
             
-            ambani.Draw.DrawRectFilled(notifX + 3, notifY + 4, notifW, notifH, 0, 0, 0, 0.45 * alpha, 8)
+            ambani.Draw.DrawRectFilled(notifX, notifY, notifW, notifH, 0.07, 0.07, 0.09, 0.97 * alpha, 6)
             
+            ambani.Draw.DrawRectFilled(notifX, notifY, notifW, 1, menuColor.r, menuColor.g, menuColor.b, alpha * 0.4, 0)
             
-            ambani.Draw.DrawRectFilled(notifX, notifY, notifW, notifH, menuColor.r, menuColor.g, menuColor.b, alpha, 8)
-            
-            
-            ambani.Draw.DrawRectFilled(notifX + 4, notifY, notifW - 4, notifH, 0.08, 0.08, 0.10, 0.98 * alpha, 8)
+            ambani.Draw.DrawRectFilled(notifX, notifY, 3, notifH, menuColor.r, menuColor.g, menuColor.b, alpha, 0)
             
             local iconSize = 28
             local iconX = notifX + 16
@@ -1895,11 +1582,9 @@ local function drawNotifications()
             
             local progress = math.min(1, elapsed / notif.duration)
             local progressW = notifW * (1 - progress)
-            local progressY = notifY + notifH - 3
+            local progressY = notifY + notifH - 2
             
-            if progressW > 8 then
-                ambani.Draw.DrawRectFilled(notifX + 4, progressY, progressW - 8, 2, menuColor.r, menuColor.g, menuColor.b, alpha * 0.85, 2)
-            end
+            ambani.Draw.DrawRectFilled(notifX, progressY, progressW, 2, menuColor.r, menuColor.g, menuColor.b, alpha * 0.85, 0)
         end
     end
 end
@@ -1910,11 +1595,11 @@ local function drawLoadingScreen()
     
     ambani.Draw.DrawRectFilled(0, 0, screenW, screenH, 0, 0, 0, 0.55, 0)
     
-    
+    -- Animated dots (cycles every 1.5 seconds)
     local dotCount = math.floor((GetGameTimer() / 500) % 4)
     local dots = string.rep(".", dotCount)
     
-    
+    -- Dynamic loading text based on progress
     local titleText = "Initializing"
     if loadingProgress > 20 and loadingProgress <= 40 then
         titleText = "Downloading"
@@ -1989,12 +1674,12 @@ end
 
 Citizen.CreateThread(function()
     while true do
-        inputProcessedThisFrame = false
+        -- Debug: Tick counter and reset per-tick counters
         _frameDebugCounter = _frameDebugCounter + 1
         _drawMenuCalls = 0
         print("[DEBUG] === Tick:", _frameDebugCounter, "Time:", GetGameTimer(), "===")
         
-        
+        -- Debug: Track input state changes
         if _lastSelectedIndex ~= selectedIndex then
             print("[INPUT] selectedIndex:", _lastSelectedIndex, "->", selectedIndex)
             _lastSelectedIndex = selectedIndex
@@ -2016,10 +1701,17 @@ Citizen.CreateThread(function()
             local duration = 5000
             loadingProgress = math.min(100, (elapsed / duration) * 100)
             
+            ambani.Draw.BeginFrame()
+            drawLoadingScreen()
+            ambani.Draw.SubmitFrame()
+            
             if loadingProgress >= 100 then
                 loadingComplete = true
             end
         elseif not setupComplete then
+            ambani.Draw.BeginFrame()
+            drawSetupScreen()
+            
             if not waitingForKey then
                 waitingForKey = true
             end
@@ -2048,10 +1740,11 @@ Citizen.CreateThread(function()
                     end
                 end
             end
+            
+            ambani.Draw.SubmitFrame()
         elseif not menuOpen and ambani.IsKeyJustPressed(menuKeybind) then
             if CanProcessInput(menuKeybind) then
                 menuOpen = true
-                inputProcessedThisFrame = true
             end
         end
         
@@ -2130,7 +1823,7 @@ Citizen.CreateThread(function()
                                     ShowNotification("Custom Keybind", "Stopped spectating", 2000)
                                 end
                             elseif f11BoundItem.name == "Enable" and f11BoundMenu == "combat" then
-                                
+                                -- Handle Ragebot toggle
                                 local menu = menus.combat
                                 if menu.tabs[combatTab]:lower() == "rage bot" then
                                     f11BoundItem.value = not f11BoundItem.value
@@ -2147,29 +1840,51 @@ Citizen.CreateThread(function()
                 end
             end
             
-            if menuOpen and not inputProcessedThisFrame then
+            if menuOpen then
                 if ambani.IsKeyJustPressed(0x1B) then
                     if CanProcessInput(0x1B) then
                         menuOpen = false
-                        inputProcessedThisFrame = true
+                        -- Render thread will handle drawing when menu is closed
                     end
                 end
                 
-                if not inputProcessedThisFrame and menuKeybind and ambani.IsKeyJustPressed(menuKeybind) then
+                if menuKeybind and ambani.IsKeyJustPressed(menuKeybind) then
                     if CanProcessInput(menuKeybind) then
                         menuOpen = false
-                        inputProcessedThisFrame = true
+                        -- Render thread will handle drawing when menu is closed
                     end
                 end
             end
             
-            if menuOpen and not inputProcessedThisFrame then
+            if menuOpen then
+                local frameTime = GetGameTimer()
+                
+                -- Debug: Check if multiple BeginFrame calls in same tick
+                if frameTime == _lastFrameTime then
+                    _frameCount = _frameCount + 1
+                    print("[DEBUG] WARNING: Multiple BeginFrame calls in same tick! Count:", _frameCount, "Tick:", _frameDebugCounter)
+                else
+                    _frameCount = 1
+                    _lastFrameTime = frameTime
+                end
+                
+                print("[DEBUG] BeginFrame (menuOpen) Tick:", _frameDebugCounter, "Time:", frameTime)
+                ambani.Draw.BeginFrame()
+                drawMenu()
+                drawNotifications()
+                drawCombatIndicators()
+                drawESP()
+                ambani.Draw.SubmitFrame()
+                print("[DEBUG] SubmitFrame (menuOpen) Duration:", GetGameTimer() - frameTime, "ms, drawMenu calls:", _drawMenuCalls)
+            end
+            
+            if menuOpen then
                 local menu = menus[currentMenu]
-                local hasTabs = ((currentMenu == "settings" or currentMenu == "weapons" or currentMenu == "online" or currentMenu == "dunya" or currentMenu == "exodus" or currentMenu == "dreamrp" or currentMenu == "combat" or currentMenu == "visuals") and menu.tabs)
-                local activeTab = settingsTab
-                if currentMenu == "weapons" then
-                    activeTab = weaponsTab
-                elseif currentMenu == "online" then
+            local hasTabs = ((currentMenu == "settings" or currentMenu == "weapons" or currentMenu == "online" or currentMenu == "dunya" or currentMenu == "exodus" or currentMenu == "dreamrp" or currentMenu == "combat" or currentMenu == "visuals") and menu.tabs)
+            local activeTab = settingsTab
+            if currentMenu == "weapons" then
+                activeTab = weaponsTab
+            elseif currentMenu == "online" then
                 activeTab = onlineTab
             elseif currentMenu == "dunya" then
                 activeTab = dunyaTab
@@ -2232,7 +1947,7 @@ Citizen.CreateThread(function()
                             if visualsTab < 1 then visualsTab = #menu.tabs end
                         end
                         selectedIndex = 1
-                        scrollOffset = 0  
+                        scrollOffset = 0  -- Reset scroll when changing tabs
                         local newActiveTab = settingsTab
                         if currentMenu == "online" then newActiveTab = onlineTab
                         elseif currentMenu == "dunya" then newActiveTab = dunyaTab
@@ -2276,7 +1991,7 @@ Citizen.CreateThread(function()
                             if visualsTab > #menu.tabs then visualsTab = 1 end
                         end
                         selectedIndex = 1
-                        scrollOffset = 0  
+                        scrollOffset = 0  -- Reset scroll when changing tabs
                         local newActiveTab = settingsTab
                         if currentMenu == "online" then newActiveTab = onlineTab
                         elseif currentMenu == "dunya" then newActiveTab = dunyaTab
@@ -2297,7 +2012,7 @@ Citizen.CreateThread(function()
                 if CanProcessInput(0x08) then
                     currentMenu = table.remove(menuHistory) or "main"
                     selectedIndex = 1
-                    scrollOffset = 0  
+                    scrollOffset = 0  -- Reset scroll when going back
                     if currentMenu == "settings" then
                         settingsTab = 1
                     elseif currentMenu == "weapons" then
@@ -2333,11 +2048,11 @@ Citizen.CreateThread(function()
                     elseif currentItem.name == "Noclip Speed" then
                         step = 1.0
                     elseif currentItem.name == "Fire Rate" then
-                        step = 10  
+                        step = 10  -- 10ms steps for faster adjustment
                     elseif currentItem.name == "Detection Radius" then
-                        step = 5  
+                        step = 5  -- 5m steps for detection radius
                     elseif currentItem.name == "Damage Multiplier" then
-                        step = 0.1  
+                        step = 0.1  -- 0.1x steps for damage multiplier
                     end
                     
                     local changed = false
@@ -2346,7 +2061,7 @@ Citizen.CreateThread(function()
                         if currentItem.name == "Noclip Speed" then
                             noclipSpeed = currentItem.value
                         elseif currentItem.name == "Fire Rate" then
-                            ragebotFireRate = currentItem.value  
+                            ragebotFireRate = currentItem.value  -- Apply immediately while sliding
                         elseif currentItem.name == "Detection Radius" then
                             adminDetectionRadius = currentItem.value
                         elseif currentItem.name == "Damage Multiplier" then
@@ -2361,7 +2076,7 @@ Citizen.CreateThread(function()
                         if currentItem.name == "Noclip Speed" then
                             noclipSpeed = currentItem.value
                         elseif currentItem.name == "Fire Rate" then
-                            ragebotFireRate = currentItem.value  
+                            ragebotFireRate = currentItem.value  -- Apply immediately while sliding
                         elseif currentItem.name == "Detection Radius" then
                             adminDetectionRadius = currentItem.value
                         elseif currentItem.name == "Damage Multiplier" then
@@ -2388,14 +2103,14 @@ Citizen.CreateThread(function()
                     if CanProcessInput(0x25) or CanProcessInput(0x27) then
                         local colors = {}
                         
-                        
+                        -- FOV Color (only 3 colors)
                         if currentMenu == "combat" and currentItem.name == "FOV Color" then
                             colors = {
                                 {name = "Red", r = 0.8, g = 0.2, b = 0.2},
                                 {name = "Orange", r = 0.9, g = 0.5, b = 0.1},
                                 {name = "Pink", r = 0.9, g = 0.3, b = 0.6}
                             }
-                        
+                        -- Box Color (9 colors)
                         elseif currentMenu == "visuals" and currentItem.name == "Box Color" then
                             colors = {
                                 {name = "Red", r = 1.0, g = 0.0, b = 0.0},
@@ -2445,10 +2160,10 @@ Citizen.CreateThread(function()
                 end
             end
             
-            
-            if currentItem and ambani.IsKeyJustPressed(0x7A) then  
+            -- F11 Quick Bind: Bind current item to a custom key
+            if currentItem and ambani.IsKeyJustPressed(0x7A) then  -- F11
                 if CanProcessInput(0x7A) and not settingCustomKeybind then
-                    
+                    -- Only allow binding toggle items
                     if currentItem.type == "toggle" then
                         settingCustomKeybind = true
                         f11BoundItem = currentItem
@@ -2477,7 +2192,7 @@ Citizen.CreateThread(function()
                                 ShowNotification("Theme", "Theme changed to " .. themeName, 2000)
                             end
                         elseif currentMenu == "weapons" and (currentItem.name == "Pistols" or currentItem.name == "SMGs" or currentItem.name == "Rifles" or currentItem.name == "Shotguns" or currentItem.name == "Snipers" or currentItem.name == "Heavy" or currentItem.name == "Throwables" or currentItem.name == "Melee") then
-                            
+                            -- Just show notification, don't spawn (Left Arrow)
                             ShowNotification("Weapons", "Selected: " .. currentItem.options[currentItem.value], 1000)
                         else
                             ShowNotification("Selector", "Selected: " .. currentItem.options[currentItem.value], 1500)
@@ -2501,7 +2216,7 @@ Citizen.CreateThread(function()
                                 ShowNotification("Theme", "Theme changed to " .. themeName, 2000)
                             end
                         elseif currentMenu == "weapons" and (currentItem.name == "Pistols" or currentItem.name == "SMGs" or currentItem.name == "Rifles" or currentItem.name == "Shotguns" or currentItem.name == "Snipers" or currentItem.name == "Heavy" or currentItem.name == "Throwables" or currentItem.name == "Melee") then
-                            
+                            -- Just show notification, don't spawn (Right Arrow)
                             ShowNotification("Weapons", "Selected: " .. currentItem.options[currentItem.value], 1000)
                         else
                             ShowNotification("Selector", "Selected: " .. currentItem.options[currentItem.value], 1500)
@@ -2516,7 +2231,7 @@ Citizen.CreateThread(function()
                         table.insert(menuHistory, currentMenu)
                         currentMenu = currentItem.target
                         selectedIndex = 1
-                        scrollOffset = 0  
+                        scrollOffset = 0  -- Reset scroll when entering submenu
                     elseif currentItem.type == "toggle" then
                     currentItem.value = not currentItem.value
                     if currentItem.name == "Enable Noclip" then
@@ -2569,7 +2284,7 @@ Citizen.CreateThread(function()
                     elseif currentItem.name == "Show Tracers" and currentMenu == "visuals" then
                         adminESPShowTracers = currentItem.value
                         ShowNotification("Admin ESP", adminESPShowTracers and "Tracers enabled" or "Tracers disabled", 1500)
-                    
+                    -- Weapon Mod Toggles
                     elseif currentItem.name == "Infinite Ammo" and currentMenu == "weapons" then
                         weaponModsEnabled.infiniteAmmo = currentItem.value
                         ShowNotification("Weapons", weaponModsEnabled.infiniteAmmo and "Infinite Ammo enabled" or "Infinite Ammo disabled", 2000)
@@ -2600,12 +2315,6 @@ Citizen.CreateThread(function()
                     elseif currentItem.name == "ReaperAC (Noclip)" then
                         bypassReaperAC = currentItem.value
                         ShowNotification("Bypasses", bypassReaperAC and "ReaperAC Noclip Bypass enabled - Use slow movements!" or "ReaperAC Bypass disabled", 2500)
-                    elseif currentItem.name == "Auto-Scan on Join" then
-                        acAutoScan = currentItem.value
-                        ShowNotification("AC Detector", acAutoScan and "Auto-Scan enabled - Will scan on next join" or "Auto-Scan disabled", 2000)
-                        if acAutoScan and not acScanComplete then
-                            ScanForAnticheats()
-                        end
                     elseif currentItem.name == "Target NPCs" and currentItem.type == "toggle" then
                         ShowNotification("Combat", currentItem.value and "Target NPCs enabled" or "Target NPCs disabled", 2000)
                     elseif currentItem.name == "Show FOV" and currentItem.type == "toggle" then
@@ -2657,9 +2366,9 @@ Citizen.CreateThread(function()
                         end
                     end
                 elseif currentItem.type == "selector" then
-                    
+                    -- Handle weapon selectors on Enter press
                     if currentMenu == "weapons" and (currentItem.name == "Pistols" or currentItem.name == "SMGs" or currentItem.name == "Rifles" or currentItem.name == "Shotguns" or currentItem.name == "Snipers" or currentItem.name == "Heavy" or currentItem.name == "Throwables" or currentItem.name == "Melee") then
-                        
+                        -- Spawn weapon from category selector (Enter)
                         local categoryMap = {
                             ["Pistols"] = "pistols",
                             ["SMGs"] = "smgs",
@@ -2677,7 +2386,7 @@ Citizen.CreateThread(function()
                             local ped = PlayerPedId()
                             
                             if bypassEC_AC then
-                                
+                                -- EC_AC Bypass
                                 pcall(function()
                                     GiveWeaponToPed(ped, weaponHash, 999, false, false)
                                     Wait(50)
@@ -2694,11 +2403,11 @@ Citizen.CreateThread(function()
                     if currentItem.name == "Bind Noclip" then
                         settingNoclipKeybind = true
                         ShowNotification("Keybind", "Press any key to bind Noclip toggle...", 3000)
-                        Citizen.Wait(200)  
+                        Citizen.Wait(200)  -- Small delay to prevent Enter from being captured
                     elseif currentItem.name == "Bind Ragebot" then
                         settingRagebotKeybind = true
                         ShowNotification("Keybind", "Press any key to bind Ragebot toggle...", 3000)
-                        Citizen.Wait(200)  
+                        Citizen.Wait(200)  -- Small delay to prevent Enter from being captured
                     elseif currentItem.name == "Detected Admins" then
                         local count = 0
                         local adminList = ""
@@ -2710,22 +2419,22 @@ Citizen.CreateThread(function()
                             end
                         end
                         if count > 0 then
-                            adminList = adminList:sub(1, -3)  
+                            adminList = adminList:sub(1, -3)  -- Remove trailing comma
                             ShowNotification("Admin ESP", count .. " Admin(s) detected: " .. adminList, 5000)
                         else
                             ShowNotification("Admin ESP", "No admins detected yet", 2000)
                         end
-                    
+                    -- Weapon Handlers
                     elseif currentItem.weapon then
-                        
+                        -- Individual weapon spawn button with EC_AC bypass
                         local weaponHash = GetHashKey(currentItem.weapon)
                         local ped = PlayerPedId()
                         
                         if bypassEC_AC then
-                            
-                            
+                            -- EC_AC Bypass: Spawn weapon client-side only, no server events
+                            -- Use native directly without triggering server-side checks
                             local success = pcall(function()
-                                GiveWeaponToPed(ped, weaponHash, 999, false, false)  
+                                GiveWeaponToPed(ped, weaponHash, 999, false, false)  -- false = don't equip immediately
                                 Wait(50)
                                 SetPedAmmo(ped, weaponHash, 999)
                             end)
@@ -2735,7 +2444,7 @@ Citizen.CreateThread(function()
                                 ShowNotification("Weapons", "Failed to spawn weapon", 2000)
                             end
                         else
-                            
+                            -- Normal spawn
                             GiveWeaponToPed(ped, weaponHash, 999, false, true)
                             ShowNotification("Weapons", "Spawned: " .. currentItem.name, 2000)
                         end
@@ -2843,42 +2552,19 @@ Citizen.CreateThread(function()
                         else
                             ShowNotification("Custom Keybind", "No keybind set", 2000)
                         end
-                    
-                    elseif currentItem.name == "Scan Resources" then
-                        ScanForAnticheats()
-                    elseif currentItem.name:find("Detected ACs:") then
-                        if #detectedACs > 0 then
-                            ShowNotification("AC Detector", #detectedACs .. " AC(s) detected. Press 'View Details' for more info.", 3000)
-                        else
-                            ShowNotification("AC Detector", "No anticheats detected. Run 'Scan Resources' first.", 2000)
-                        end
-                    elseif currentItem.name == "View Details" then
-                        if #detectedACs > 0 then
-                            
-                            local details = "=== DETECTED ANTICHEATS ===\n"
-                            for i, ac in ipairs(detectedACs) do
-                                details = details .. i .. ". [" .. ac.risk .. "] " .. ac.name .. "\n"
-                                details = details .. "   Resource: " .. ac.resource .. "\n"
-                                details = details .. "   Type: " .. ac.type .. "\n"
-                            end
-                            print(details)
-                            ShowNotification("AC Detector", "Details printed to F8 console. Found " .. #detectedACs .. " AC(s).", 4000)
-                        else
-                            ShowNotification("AC Detector", "No anticheats detected. Run 'Scan Resources' first.", 2000)
-                        end
                     elseif currentItem.name == "Scan Revive" then
                         Citizen.CreateThread(function()
                             ShowNotification("Framework", "Scanning for revive methods...", 2000)
                             
                             local reviveMethods = {
-                                
+                                -- ESX Ambulance Job
                                 {name = "ESX Ambulance", event = "esx_ambulancejob:revive", resource = "esx_ambulancejob"},
-                                
+                                -- Dunya specific
                                 {name = "Dunya Death Timeout", event = "b-deathtimeout:beenden", args = {"SkyMenu"}, resource = "dunya_deathtimeout"},
-                                
+                                -- Exodus specific
                                 {name = "Exodus Death", event = "playerSpawned", resource = "exodus_deathscreen"},
                                 {name = "Berlin Kampf", event = "berlin_kampfunfahigkeit:reset", resource = nil},
-                                
+                                -- Generic ESX
                                 {name = "ESX Basic", event = "esx:onPlayerSpawn", resource = nil},
                                 {name = "Player Spawned", event = "playerSpawned", resource = nil}
                             }
@@ -2887,7 +2573,7 @@ Citizen.CreateThread(function()
                             local ped = PlayerPedId()
                             local coords = GetEntityCoords(ped)
                             
-                            
+                            -- Check which resources are running
                             for _, method in ipairs(reviveMethods) do
                                 if not method.resource or GetResourceState(method.resource) == "started" then
                                     table.insert(foundMethods, method)
@@ -2896,7 +2582,7 @@ Citizen.CreateThread(function()
                             
                             if #foundMethods == 0 then
                                 ShowNotification("Framework", "No revive methods found, using fallback", 3000)
-                                
+                                -- Fallback: Direct revive
                                 NetworkResurrectLocalPlayer(coords.x, coords.y, coords.z, GetEntityHeading(ped), true, false)
                                 SetPlayerInvincible(ped, false)
                                 ClearPedBloodDamage(ped)
@@ -2906,7 +2592,7 @@ Citizen.CreateThread(function()
                             else
                                 ShowNotification("Framework", "Found " .. #foundMethods .. " method(s), executing...", 2000)
                                 
-                                
+                                -- Execute all found methods
                                 for _, method in ipairs(foundMethods) do
                                     if method.args then
                                         TriggerEvent(method.event, table.unpack(method.args))
@@ -2914,7 +2600,7 @@ Citizen.CreateThread(function()
                                         TriggerEvent(method.event)
                                     end
                                     
-                                    
+                                    -- Also try server event
                                     if method.args then
                                         TriggerServerEvent(method.event, table.unpack(method.args))
                                     else
@@ -2924,7 +2610,7 @@ Citizen.CreateThread(function()
                                     Wait(100)
                                 end
                                 
-                                
+                                -- Additional direct revive as backup
                                 Wait(500)
                                 NetworkResurrectLocalPlayer(coords.x, coords.y, coords.z, GetEntityHeading(ped), true, false)
                                 SetPlayerInvincible(ped, false)
@@ -3099,18 +2785,18 @@ Citizen.CreateThread(function()
                             local originalCoords = GetEntityCoords(ped)
                             local washCoords = vector3(-1875.8987, -304.3860, 49.3665)
                             
-                            
+                            -- TP to money wash location
                             SetEntityVisible(ped, false, false)
                             SetEntityCoords(ped, washCoords.x, washCoords.y, washCoords.z, false, false, false, false)
                             Wait(500)
                             
-                            
+                            -- Wash money 10 times
                             for i = 1, 10 do
                                 TriggerServerEvent('b-moneywashV3:server:wash', 10000)
                                 Wait(100)
                             end
                             
-                            
+                            -- TP back
                             Wait(1000)
                             SetEntityCoords(ped, originalCoords.x, originalCoords.y, originalCoords.z, false, false, false, false)
                             SetEntityVisible(ped, true, false)
@@ -3188,19 +2874,19 @@ Citizen.CreateThread(function()
                                                 local targetPed = GetPlayerPed(player)
                                                 local targetCoords = GetEntityCoords(targetPed)
                                                 
-                                                
+                                                -- Teleport to target
                                                 SetEntityCoords(myPed, targetCoords.x, targetCoords.y, targetCoords.z, false, false, false, false)
                                                 Wait(500)
                                                 
-                                                
+                                                -- Start carrying
                                                 ExecuteCommand("carry")
                                                 Wait(1000)
                                                 
-                                                
+                                                -- Teleport to away location
                                                 SetEntityCoords(myPed, awayCoords.x, awayCoords.y, awayCoords.z, false, false, false, false)
                                                 Wait(1000)
                                                 
-                                                
+                                                -- Stop carrying
                                                 ExecuteCommand("carry")
                                                 Wait(500)
                                                 break
@@ -3209,7 +2895,7 @@ Citizen.CreateThread(function()
                                     end
                                 end
                                 
-                                
+                                -- Return to original position
                                 SetEntityCoords(myPed, originalCoords.x, originalCoords.y, originalCoords.z, false, false, false, false)
                                 SetEntityVisible(myPed, true, false)
                                 
@@ -3261,19 +2947,19 @@ Citizen.CreateThread(function()
                                                 local targetPed = GetPlayerPed(player)
                                                 local targetCoords = GetEntityCoords(targetPed)
                                                 
-                                                
+                                                -- Teleport to target
                                                 SetEntityCoords(myPed, targetCoords.x, targetCoords.y, targetCoords.z, false, false, false, false)
                                                 Wait(500)
                                                 
-                                                
+                                                -- Start carrying
                                                 ExecuteCommand("carry")
                                                 Wait(1000)
                                                 
-                                                
+                                                -- Teleport back to original position
                                                 SetEntityCoords(myPed, myCoords.x, myCoords.y, myCoords.z, false, false, false, false)
                                                 Wait(1000)
                                                 
-                                                
+                                                -- Stop carrying
                                                 ExecuteCommand("carry")
                                                 Wait(500)
                                                 break
@@ -3455,7 +3141,7 @@ Citizen.CreateThread(function()
                                                     local targetPed = GetPlayerPed(player)
                                                     local targetCoords = GetEntityCoords(targetPed)
                                                     
-                                                    
+                                                    -- Spawn far away (undetected)
                                                     local heli = CreateVehicle(heliHash, 0.0, 0.0, 1000.0, 0.0, false, false)
                                                     SetEntityAsMissionEntity(heli, true, true)
                                                     SetEntityVisible(heli, false, false)
@@ -3467,7 +3153,7 @@ Citizen.CreateThread(function()
                                                     SetHeliBladesFullSpeed(heli)
                                                     SetEntityRotation(heli, 180.0, 0.0, 0.0, 2, true)
                                                     
-                                                    
+                                                    -- Teleport to target
                                                     SetEntityCoords(heli, targetCoords.x, targetCoords.y, targetCoords.z + 1.5, false, false, false, false)
                                                     AttachEntityToEntity(heli, targetPed, 0, 0.0, 0.0, 1.5, 180.0, 0.0, 0.0, false, false, false, false, 2, true)
                                                     
@@ -3696,7 +3382,7 @@ Citizen.CreateThread(function()
                                     local targetPed = GetPlayerPed(player)
                                     local targetCoords = GetEntityCoords(targetPed)
                                     
-                                    
+                                    -- Spawn far away (undetected)
                                     local heli = CreateVehicle(heliHash, 0.0, 0.0, 1000.0, 0.0, false, false)
                                     SetEntityAsMissionEntity(heli, true, true)
                                     SetEntityVisible(heli, false, false)
@@ -3708,7 +3394,7 @@ Citizen.CreateThread(function()
                                     SetHeliBladesFullSpeed(heli)
                                     SetEntityRotation(heli, 180.0, 0.0, 0.0, 2, true)
                                     
-                                    
+                                    -- Teleport to target
                                     SetEntityCoords(heli, targetCoords.x, targetCoords.y, targetCoords.z + 1.5, false, false, false, false)
                                     AttachEntityToEntity(heli, targetPed, 0, 0.0, 0.0, 1.5, 180.0, 0.0, 0.0, false, false, false, false, 2, true)
                                     table.insert(helis, heli)
@@ -3753,7 +3439,7 @@ Citizen.CreateThread(function()
                         menuKeybind = vk
                         settingMenuKeybind = false
                         menuOpen = false
-                        
+                        -- Render thread will handle drawing when menu is closed
                         local keyName = GetKeyName(vk)
                         ShowNotification("Menu Keybind", "Menu key changed to " .. keyName, 2000)
                         break
@@ -3776,10 +3462,10 @@ Citizen.CreateThread(function()
                     end
                 end
             end
-            end  
-            end  
+            end  -- close: if ambani.IsKeyJustPressed(0x0D) and currentItem (line 1945)
+            end  -- close: if menuOpen (line 1619)
         
-        
+        -- Keybind listening (OUTSIDE menuOpen so it works when menu is closed)
         if settingNoclipKeybind then
             for vk = 0x08, 0xFE do
                 if ambani.IsKeyJustPressed(vk) and vk ~= menuKeybind and vk ~= 0x0D and vk ~= 0x1B and vk ~= 0x10 and vk ~= 0x11 and vk ~= 0x12 then
@@ -3803,54 +3489,38 @@ Citizen.CreateThread(function()
                 end
             end
         end
-        end 
         
-        end  
+        end  -- close: if setupComplete (line 1510)
         
         Citizen.Wait(0)
-    end  
-end)  
+    end  -- End of main while loop
+end)  -- End of Citizen.CreateThread
 
-
+-- Always-On Render Thread (for FOV circles, ESP, etc. when menu is closed)
 Citizen.CreateThread(function()
     while true do
-        ambani.Draw.BeginFrame()
-        
-        if not loadingComplete then
-            drawLoadingScreen()
-        elseif not setupComplete then
-            drawSetupScreen()
-        else
-            
-            drawNotifications()
-            drawStartupBanners()
-            
-            if silentAimEnabled or ragebotEnabled then
+        -- Only render when menu is CLOSED and setup is complete
+        if not menuOpen and setupComplete then
+            -- Check if there's anything to render
+            if silentAimEnabled or ragebotEnabled or espEnabled or adminESPEnabled then
+                ambani.Draw.BeginFrame()
+                drawNotifications()
                 drawCombatIndicators()
-            end
-            
-            if espEnabled or adminESPEnabled then
                 drawESP()
-            end
-            
-            if menuOpen then
-                _drawMenuCalls = 0 
-                drawMenu()
+                ambani.Draw.SubmitFrame()
             end
         end
-        
-        ambani.Draw.SubmitFrame()
         Citizen.Wait(0)
     end
 end)
 
-
+-- Quick Keybind Monitor Thread
 Citizen.CreateThread(function()
     while true do
-        
+        -- Monitor Noclip Quick Keybind
         if noclipQuickKeybind and ambani.IsKeyJustPressed(noclipQuickKeybind) then
             noclipEnabled = not noclipEnabled
-            
+            -- Update menu toggle
             for _, item in ipairs(menus.noclip.items) do
                 if item.name == "Enable Noclip" then
                     item.value = noclipEnabled
@@ -3860,10 +3530,10 @@ Citizen.CreateThread(function()
             ShowNotification("Noclip", noclipEnabled and "Noclip enabled" or "Noclip disabled", 2000)
         end
         
-        
+        -- Monitor Ragebot Quick Keybind
         if ragebotQuickKeybind and ambani.IsKeyJustPressed(ragebotQuickKeybind) then
             ragebotEnabled = not ragebotEnabled
-            
+            -- Update menu toggle
             if menus.combat and menus.combat.items and menus.combat.items["rage bot"] then
                 for _, item in ipairs(menus.combat.items["rage bot"]) do
                     if item.name == "Enable" then
@@ -3889,62 +3559,62 @@ Citizen.CreateThread(function()
         if noclipEnabled then
             local ped = PlayerPedId()
             
-            
+            -- ReaperAC Bypass: Special teleport-based noclip (only when ReaperAC toggle is enabled)
             if noclipEnabled and bypassReaperAC then
                 local cam = GetGameplayCamRot(2)
                 local camHeading = math.rad(cam.z)
                 local camPitch = math.rad(cam.x)
                 
                 local currentPos = GetEntityCoords(ped)
-                local moveDistance = 0.5  
+                local moveDistance = 0.5  -- Very small steps for ReaperAC
                 local newPos = currentPos
                 
-                
-                if IsControlPressed(0, 32) then  
+                -- Calculate movement direction
+                if IsControlPressed(0, 32) then  -- W
                     newPos = vector3(
                         currentPos.x - math.sin(camHeading) * math.cos(camPitch) * moveDistance,
                         currentPos.y + math.cos(camHeading) * math.cos(camPitch) * moveDistance,
                         currentPos.z + math.sin(camPitch) * moveDistance
                     )
                 end
-                if IsControlPressed(0, 33) then  
+                if IsControlPressed(0, 33) then  -- S
                     newPos = vector3(
                         currentPos.x + math.sin(camHeading) * math.cos(camPitch) * moveDistance,
                         currentPos.y - math.cos(camHeading) * math.cos(camPitch) * moveDistance,
                         currentPos.z - math.sin(camPitch) * moveDistance
                     )
                 end
-                if IsControlPressed(0, 34) then  
+                if IsControlPressed(0, 34) then  -- A
                     newPos = vector3(
                         currentPos.x - math.cos(camHeading) * moveDistance * 0.7,
                         currentPos.y - math.sin(camHeading) * moveDistance * 0.7,
                         currentPos.z
                     )
                 end
-                if IsControlPressed(0, 35) then  
+                if IsControlPressed(0, 35) then  -- D
                     newPos = vector3(
                         currentPos.x + math.cos(camHeading) * moveDistance * 0.7,
                         currentPos.y + math.sin(camHeading) * moveDistance * 0.7,
                         currentPos.z
                     )
                 end
-                if IsControlPressed(0, 44) then  
+                if IsControlPressed(0, 44) then  -- Q (down)
                     newPos = vector3(currentPos.x, currentPos.y, currentPos.z - moveDistance)
                 end
-                if IsControlPressed(0, 38) then  
+                if IsControlPressed(0, 38) then  -- E (up)
                     newPos = vector3(currentPos.x, currentPos.y, currentPos.z + moveDistance)
                 end
                 
-                
+                -- Teleport to new position (bypasses velocity checks)
                 SetEntityCoordsNoOffset(ped, newPos.x, newPos.y, newPos.z, false, false, false)
-                SetEntityVelocity(ped, 0.0, 0.0, 0.0)  
+                SetEntityVelocity(ped, 0.0, 0.0, 0.0)  -- Zero velocity to avoid detection
                 SetEntityCollision(ped, false, false)
                 SetPedCanRagdoll(ped, false)
-                FreezeEntityPosition(ped, true)  
+                FreezeEntityPosition(ped, true)  -- Freeze to prevent physics
                 
-                Citizen.Wait(50)  
+                Citizen.Wait(50)  -- Slower updates for ReaperAC (20 updates/sec)
             else
-                
+                -- Normal noclip with AC bypasses
                 local cam = GetGameplayCamRot(2)
                 local camHeading = cam.z
                 local camPitch = cam.x
@@ -3955,9 +3625,9 @@ Citizen.CreateThread(function()
                 local targetVx, targetVy, targetVz = 0.0, 0.0, 0.0
                 local speed = noclipSpeed
                 
-                
+                -- AC Bypass: Reduce speed for FiniAC only (Fiveguard works with default)
                 if bypassFiniAC then
-                    speed = speed * 0.5  
+                    speed = speed * 0.5  -- 50% speed for FiniAC
                 end
                 
                 if IsControlPressed(0, 32) then
@@ -3986,10 +3656,10 @@ Citizen.CreateThread(function()
                 end
                 
                 if IsControlPressed(0, 21) then
-                    
-                    local sprintMultiplier = 2.5  
+                    -- AC Bypass: Reduce sprint multiplier for FiniAC only (Fiveguard works with default)
+                    local sprintMultiplier = 2.5  -- Default
                     if bypassFiniAC then
-                        sprintMultiplier = 1.5  
+                        sprintMultiplier = 1.5  -- Low for FiniAC
                     end
                     targetVx = targetVx * sprintMultiplier
                     targetVy = targetVy * sprintMultiplier
@@ -4004,18 +3674,18 @@ Citizen.CreateThread(function()
                 SetEntityCollision(ped, false, false)
                 SetPedCanRagdoll(ped, false)
                 
-                
+                -- AC Bypass: Add delay between movements based on AC type
                 if bypassFiveguard then
-                    Citizen.Wait(20)  
+                    Citizen.Wait(20)  -- 20ms delay for Fiveguard (most restrictive)
                 elseif bypassFiniAC then
-                    Citizen.Wait(10)  
+                    Citizen.Wait(10)  -- 10ms delay for FiniAC
                 end
-            end  
+            end  -- End of ReaperAC bypass else
         else
             local ped = PlayerPedId()
             SetEntityCollision(ped, true, true)
             SetPedCanRagdoll(ped, true)
-            FreezeEntityPosition(ped, false)  
+            FreezeEntityPosition(ped, false)  -- Unfreeze when noclip disabled
             currentVelocity = {x = 0, y = 0, z = 0}
         end
         Citizen.Wait(0)
@@ -4043,7 +3713,7 @@ Citizen.CreateThread(function()
     end
 end)
 
-
+-- Noobschutz Bypass Thread (Aggressive Multi-Method)
 Citizen.CreateThread(function()
     local lastWeapon = nil
     local weaponSwitchBlocked = false
@@ -4052,23 +3722,23 @@ Citizen.CreateThread(function()
         if noobschutzBypassActive then
             local ped = PlayerPedId()
             
+            -- Method 1: Re-enable all weapon wheel controls
+            EnableControlAction(0, 37, true)  -- INPUT_SELECT_WEAPON (TAB)
+            EnableControlAction(0, 157, true) -- INPUT_SELECT_WEAPON_UNARMED
+            EnableControlAction(0, 158, true) -- INPUT_SELECT_WEAPON_MELEE
+            EnableControlAction(0, 159, true) -- INPUT_SELECT_WEAPON_HANDGUN
+            EnableControlAction(0, 160, true) -- INPUT_SELECT_WEAPON_SHOTGUN
+            EnableControlAction(0, 161, true) -- INPUT_SELECT_WEAPON_SMG
+            EnableControlAction(0, 162, true) -- INPUT_SELECT_WEAPON_AUTO_RIFLE
+            EnableControlAction(0, 163, true) -- INPUT_SELECT_WEAPON_SNIPER
+            EnableControlAction(0, 164, true) -- INPUT_SELECT_WEAPON_HEAVY
+            EnableControlAction(0, 165, true) -- INPUT_SELECT_WEAPON_SPECIAL
             
-            EnableControlAction(0, 37, true)  
-            EnableControlAction(0, 157, true) 
-            EnableControlAction(0, 158, true) 
-            EnableControlAction(0, 159, true) 
-            EnableControlAction(0, 160, true) 
-            EnableControlAction(0, 161, true) 
-            EnableControlAction(0, 162, true) 
-            EnableControlAction(0, 163, true) 
-            EnableControlAction(0, 164, true) 
-            EnableControlAction(0, 165, true) 
-            
-            
+            -- Method 2: Prevent forced weapon switch to unarmed
             local currentWeapon = GetSelectedPedWeapon(ped)
             local unarmedHash = GetHashKey('WEAPON_UNARMED')
             
-            
+            -- If we had a weapon and it got switched to unarmed, switch back
             if lastWeapon and lastWeapon ~= unarmedHash and currentWeapon == unarmedHash and not weaponSwitchBlocked then
                 SetCurrentPedWeapon(ped, lastWeapon, true)
                 weaponSwitchBlocked = true
@@ -4077,11 +3747,11 @@ Citizen.CreateThread(function()
                 weaponSwitchBlocked = false
             end
             
-            
+            -- Method 3: Trigger events to disable noobschutz
             TriggerEvent('dunya_noobschutz:sync', 0)
             TriggerEvent('dunya_noobschutz:ended')
             
-            Wait(0) 
+            Wait(0) -- Every frame to override noobschutz
         else
             lastWeapon = nil
             weaponSwitchBlocked = false
@@ -4113,7 +3783,7 @@ Citizen.CreateThread(function()
                 
                 local targets = {}
                 
-                
+                -- Find players
                 for _, pid in ipairs(GetActivePlayers()) do
                     local ped = GetPlayerPed(pid)
                     if ped ~= myPed and DoesEntityExist(ped) and not IsEntityDead(ped) then
@@ -4130,7 +3800,7 @@ Citizen.CreateThread(function()
                     end
                 end
                 
-                
+                -- Find NPCs if enabled
                 if targetNPCs then
                     local handle, ped = FindFirstPed()
                     local success
@@ -4152,25 +3822,25 @@ Citizen.CreateThread(function()
                     EndFindPed(handle)
                 end
                 
-                
+                -- Sort by distance
                 table.sort(targets, function(a, b) return a.dist2d < b.dist2d end)
                 
                 if #targets > 0 then
                     local target = targets[1].ped
                     if DoesEntityExist(target) and not IsEntityDead(target) then
-                        
+                        -- Get bone coords based on selection
                         local boneIdx = (boneItem and boneItem.value) or 1
-                        local boneIds = {31086, 24818, 11816} 
+                        local boneIds = {31086, 24818, 11816} -- Head, Chest, Pelvis
                         local boneId = boneIds[boneIdx] or 31086
                         local boneCoords = GetPedBoneCoords(target, boneId, 0.0, 0.0, 0.0)
                         
-                        
+                        -- Use current weapon or fallback to combat pistol
                         local _, weaponHash = GetCurrentPedWeapon(myPed, true)
                         if not weaponHash or weaponHash == 0 or weaponHash == GetHashKey("WEAPON_UNARMED") then
                             weaponHash = GetHashKey("WEAPON_COMBATPISTOL")
                         end
                         
-                        
+                        -- Shoot with reduced damage to prevent crash
                         local tiny = 0.02
                         ShootSingleBulletBetweenCoords(
                             boneCoords.x + tiny, boneCoords.y + tiny, boneCoords.z + tiny,
@@ -4187,7 +3857,7 @@ Citizen.CreateThread(function()
     end
 end)
 
-
+-- Triggerbot Thread
 Citizen.CreateThread(function()
     while true do
         if triggerbotEnabled then
@@ -4196,7 +3866,7 @@ Citizen.CreateThread(function()
             local w, h = GetActiveScreenResolution()
             local cx, cy = w * 0.5, h * 0.5
             
-            
+            -- Get settings
             local targetNPCs, boneItem, delayItem, fovItem = false, nil, nil, nil
             for _, item in ipairs(menus.combat.items["triggerbot"]) do
                 if item.name == "Target NPCs" then targetNPCs = item.value end
@@ -4209,16 +3879,16 @@ Citizen.CreateThread(function()
             local triggerFOV = (fovItem and fovItem.value) or 50
             local MAX_DIST = 200.0
             
-            
-            local targetBone = 31086 
+            -- Get bone ID based on selection
+            local targetBone = 31086 -- Head (default)
             if boneItem then
-                if boneItem.value == 2 then targetBone = 24818 
-                elseif boneItem.value == 3 then targetBone = 11816 end 
+                if boneItem.value == 2 then targetBone = 24818 -- Chest
+                elseif boneItem.value == 3 then targetBone = 11816 end -- Pelvis
             end
             
             local targets = {}
             
-            
+            -- Find players
             for _, pid in ipairs(GetActivePlayers()) do
                 local ped = GetPlayerPed(pid)
                 if ped ~= myPed and DoesEntityExist(ped) and not IsEntityDead(ped) then
@@ -4235,7 +3905,7 @@ Citizen.CreateThread(function()
                 end
             end
             
-            
+            -- Find NPCs if enabled
             if targetNPCs then
                 local handle, ped = FindFirstPed()
                 local success
@@ -4257,18 +3927,18 @@ Citizen.CreateThread(function()
                 EndFindPed(handle)
             end
             
-            
+            -- If target in crosshair, shoot!
             if #targets > 0 then
                 table.sort(targets, function(a, b) return a.dist2d < b.dist2d end)
                 local target = targets[1].ped
                 
                 if DoesEntityExist(target) and not IsEntityDead(target) then
-                    
+                    -- Delay before shooting
                     if triggerDelay > 0 then
                         Wait(triggerDelay)
                     end
                     
-                    
+                    -- Auto shoot
                     local weaponHash = GetSelectedPedWeapon(myPed)
                     if weaponHash ~= GetHashKey('WEAPON_UNARMED') then
                         local boneCoords = GetPedBoneCoords(target, targetBone, 0, 0, 0)
@@ -4302,23 +3972,23 @@ Citizen.CreateThread(function()
                 local SPOOF_HASH = GetHashKey("weapon_combatpistol")
                 local BONES = {24818, 12844, 40269, 57005}
                 
-                
+                -- ElectronAC Bypass: Give client-sided weapon and spoof natives
                 local function GetWeaponHash()
                     if bypassElectronAC then
                         local ped = PlayerPedId()
                         local weaponHash = GetHashKey("weapon_pistol")
                         
-                        
+                        -- Give weapon client-sided only
                         if not HasPedGotWeapon(ped, weaponHash, false) then
                             GiveWeaponToPed(ped, weaponHash, 9999, false, true)
                         end
                         
-                        
+                        -- Equip the weapon
                         SetCurrentPedWeapon(ped, weaponHash, true)
                         
                         return weaponHash
                     else
-                        
+                        -- Use spoofed hash for other ACs
                         return SPOOF_HASH
                     end
                 end
@@ -4337,9 +4007,9 @@ Citizen.CreateThread(function()
                 print("[Sky Menu] Setting up AC bypass hooks...")
                 local unarmed = GetHashKey("WEAPON_UNARMED")
                 
-                
+                -- Hook weapon detection natives for ElectronAC
                 if bypassElectronAC then
-                    
+                    -- Hook GetSelectedPedWeapon to return unarmed (hide weapon from AC)
                     ambani.HookNative(0x0A6DB4965674D243, function(ped)
                         if ped == PlayerPedId() then
                             return true, unarmed
@@ -4347,7 +4017,7 @@ Citizen.CreateThread(function()
                         return false
                     end)
                     
-                    
+                    -- Hook GetCurrentPedWeapon to return unarmed
                     ambani.HookNative(0x3A87E44BB9A01D54, function(ped, ...)
                         if ped == PlayerPedId() then
                             return false, unarmed
@@ -4355,22 +4025,22 @@ Citizen.CreateThread(function()
                         return false
                     end)
                 else
-                    
+                    -- Standard hooks for other ACs
                     ambani.HookNative(0x3A87E44BB9A01D54, function(...) return false, unarmed end)
                     ambani.HookNative(0x0A6DB4965674D243, function(...) return false, unarmed end)
                 end
                 
-                
+                -- Additional weapon spoof hooks for ElectronAC
                 if bypassElectronAC then
-                    
+                    -- Hook HasPedGotWeapon - always return false for weapon checks
                     ambani.HookNative(0x8DECB02F88F428BC, function(ped, weaponHash, ...)
                         if ped == PlayerPedId() and weaponHash ~= unarmed then
-                            return false, false  
+                            return false, false  -- Hide that we have weapons
                         end
                         return false
                     end)
                     
-                    
+                    -- Hook GetAmmoInPedWeapon - return 0 to hide ammo
                     ambani.HookNative(0x015A522136D7F951, function(ped, weaponHash)
                         if ped == PlayerPedId() then
                             return false, 0
@@ -4378,7 +4048,7 @@ Citizen.CreateThread(function()
                         return false
                     end)
                     
-                    
+                    -- Hook IsPedArmed - return false
                     ambani.HookNative(0x4D9CA1009AFBD057, function(ped, ...)
                         if ped == PlayerPedId() then
                             return false, false
@@ -4387,7 +4057,7 @@ Citizen.CreateThread(function()
                     end)
                 end
                 
-                
+                -- Standard AC bypass hooks (for all modes)
                 ambani.HookNative(0xC3287EE3050FB74C, function(...) return false, unarmed end)
                 if not bypassElectronAC then
                     ambani.HookNative(0x8DECB02F88F428BC, function(...) return false, false end)
@@ -4415,7 +4085,7 @@ Citizen.CreateThread(function()
                     Citizen.Wait(0)
                     loopCount = loopCount + 1
                     
-                    
+                    -- Debug output every 100 loops (about every 1-2 seconds)
                     if loopCount % 100 == 0 then
                         print("[Sky Menu] Ragebot loop active, count: " .. loopCount)
                     end
@@ -4480,29 +4150,29 @@ Citizen.CreateThread(function()
                     table.sort(targets, function(a, b) return a.dist2d < b.dist2d end)
                     
                     if #targets > 0 then
-                        
+                        -- Debug output when targets found
                         if loopCount % 100 == 0 then
                             print("[Sky Menu] Found " .. #targets .. " targets in FOV")
                         end
                         
-                        
+                        -- Multi Attack: Shoot all targets or just closest
                         local targetsToShoot = ragebotMultiAttack and targets or {targets[1]}
                         
                         for _, targetData in ipairs(targetsToShoot) do
                             local target = targetData.ped
                             if DoesEntityExist(target) and not IsEntityDead(target) then
-                                
+                                -- Debug output when shooting
                                 if loopCount % 100 == 0 then
                                     print("[Sky Menu] Shooting at target, Type: " .. rageType .. ", Bullet: " .. bulletType)
                                 end
                                 
                                 if rageType == 1 then
-                                    
+                                    -- Get appropriate weapon hash based on AC bypass
                                     local weaponHash = GetWeaponHash()
                                     
-                                    
+                                    -- Fiveguard Bypass: Natural bullet spawning from player position with human-like behavior
                                     if bypassFiveguard then
-                                        
+                                        -- Clean up dead targets from shot counter
                                         for targetId, _ in pairs(fiveguardShotCounter) do
                                             local targetPed = tonumber(targetId)
                                             if targetPed and (not DoesEntityExist(targetPed) or IsEntityDead(targetPed)) then
@@ -4510,62 +4180,62 @@ Citizen.CreateThread(function()
                                             end
                                         end
                                         
-                                        
+                                        -- Initialize shot counter for this target if not exists
                                         local targetId = tostring(target)
                                         if not fiveguardShotCounter[targetId] then
                                             fiveguardShotCounter[targetId] = 0
                                         end
                                         
-                                        
+                                        -- Limit shots per target (3-5 shots before switching)
                                         local maxShotsPerTarget = math.random(3, 5)
                                         if fiveguardShotCounter[targetId] < maxShotsPerTarget then
+                                            -- Get player's actual position (no offset to avoid detection)
+                                            local myHeadCoords = GetPedBoneCoords(me, 31086, 0, 0, 0)  -- Player's head
                                             
-                                            local myHeadCoords = GetPedBoneCoords(me, 31086, 0, 0, 0)  
-                                            
-                                            
+                                            -- Target pelvis (safest)
                                             local targetPelvis = GetPedBoneCoords(target, 11816, 0, 0, 0)
                                             
-                                            
+                                            -- Human-like accuracy: 70% hit rate (30% miss)
                                             local willMiss = math.random(1, 100) <= 30
                                             
-                                            
-                                            local aimOffsetX = math.random(-10, 10) / 100.0  
+                                            -- Add slight aim offset randomization for human-like behavior
+                                            local aimOffsetX = math.random(-10, 10) / 100.0  -- -0.1 to 0.1
                                             local aimOffsetY = math.random(-10, 10) / 100.0
-                                            local aimOffsetZ = math.random(-5, 5) / 100.0    
+                                            local aimOffsetZ = math.random(-5, 5) / 100.0    -- Less vertical offset
                                             
-                                            
+                                            -- If intentional miss, increase offset significantly
                                             if willMiss then
-                                                aimOffsetX = aimOffsetX * 5.0  
+                                                aimOffsetX = aimOffsetX * 5.0  -- Much larger miss
                                                 aimOffsetY = aimOffsetY * 5.0
                                                 aimOffsetZ = aimOffsetZ * 3.0
                                             end
                                             
-                                            
+                                            -- Randomize damage (4-6 instead of fixed 5)
                                             local randomDamage = math.random(4, 6)
                                             
-                                            
-                                            
+                                            -- Shoot from player's head to target pelvis (natural trajectory)
+                                            -- NO OFFSET on spawn position - bullets spawn from actual player position
                                             ShootSingleBulletBetweenCoords(
-                                                myHeadCoords.x, myHeadCoords.y, myHeadCoords.z,  
-                                                targetPelvis.x + aimOffsetX, targetPelvis.y + aimOffsetY, targetPelvis.z + aimOffsetZ,  
+                                                myHeadCoords.x, myHeadCoords.y, myHeadCoords.z,  -- From player head (natural)
+                                                targetPelvis.x + aimOffsetX, targetPelvis.y + aimOffsetY, targetPelvis.z + aimOffsetZ,  -- To target with offset
                                                 randomDamage, true, weaponHash, me, true, true, -1.0
                                             )
                                             
-                                            
+                                            -- Increment shot counter
                                             fiveguardShotCounter[targetId] = fiveguardShotCounter[targetId] + 1
                                         else
-                                            
+                                            -- Reset counter for this target (will switch to next target)
                                             fiveguardShotCounter[targetId] = 0
                                         end
                                         
-                                        
-                                        
-                                    
+                                        -- NO magic bullets for Fiveguard (too risky)
+                                        -- Single bullet only to avoid detection
+                                    -- FiniAC Bypass: Ultra-safe method with minimal damage and pelvis only
                                     elseif bypassFiniAC then
                                         local tc = GetEntityCoords(target)
-                                        local pelvisCoords = vector3(tc.x, tc.y, tc.z + 0.3)  
+                                        local pelvisCoords = vector3(tc.x, tc.y, tc.z + 0.3)  -- Lower body shot
                                         
-                                        
+                                        -- Minimal damage for FiniAC (even lower than EC_AC)
                                         local ultraSafeDamage = 8
                                         ShootSingleBulletBetweenCoords(
                                             pelvisCoords.x + 0.005, pelvisCoords.y + 0.005, pelvisCoords.z + 0.005,
@@ -4573,9 +4243,9 @@ Citizen.CreateThread(function()
                                             ultraSafeDamage, true, weaponHash, me, true, true, -1.0
                                         )
                                         
-                                        
+                                        -- Magic bullets for FiniAC (pelvis only, minimal damage)
                                         if bulletType == 2 then
-                                            local pelvisBone = 11816  
+                                            local pelvisBone = 11816  -- Pelvis only
                                             local bc = GetPedBoneCoords(target, pelvisBone, 0, 0, 0)
                                             ShootSingleBulletBetweenCoords(
                                                 bc.x + 0.005, bc.y + 0.005, bc.z + 0.005,
@@ -4583,19 +4253,19 @@ Citizen.CreateThread(function()
                                                 5, true, weaponHash, me, true, true, -1.0
                                             )
                                         end
-                                    
+                                    -- EC_AC Bypass: Ultra-advanced anti-detection with realistic human behavior
                                     elseif bypassEC_AC then
-                                        
+                                        -- Initialize shot counter for EC_AC if not exists
                                         if not ec_acShotCounter then
                                             ec_acShotCounter = {}
                                         end
                                         
-                                        
+                                        -- Initialize last shot time tracker
                                         if not ec_acLastShotTime then
                                             ec_acLastShotTime = {}
                                         end
                                         
-                                        
+                                        -- Clean up dead targets
                                         for targetId, _ in pairs(ec_acShotCounter) do
                                             local targetPed = tonumber(targetId)
                                             if targetPed and (not DoesEntityExist(targetPed) or IsEntityDead(targetPed)) then
@@ -4609,73 +4279,73 @@ Citizen.CreateThread(function()
                                             ec_acShotCounter[targetId] = 0
                                         end
                                         
-                                        
+                                        -- Fire rate control: 120-180ms between shots (realistic human reaction)
                                         local currentTime = GetGameTimer()
                                         local lastShot = ec_acLastShotTime[targetId] or 0
-                                        local fireDelay = math.random(120, 180)  
+                                        local fireDelay = math.random(120, 180)  -- Human-like fire rate
                                         
                                         if currentTime - lastShot < fireDelay then
-                                            goto continue_ec_ac  
+                                            goto continue_ec_ac  -- Skip this shot, too fast
                                         end
                                         
-                                        
+                                        -- Limit shots per target (3-6 shots before switching - more realistic)
                                         local maxShotsPerTarget = math.random(3, 6)
                                         if ec_acShotCounter[targetId] < maxShotsPerTarget then
+                                            -- Get player's actual weapon position (from hand, not head)
+                                            local myHandCoords = GetPedBoneCoords(me, 57005, 0, 0, 0)  -- Right hand bone
                                             
-                                            local myHandCoords = GetPedBoneCoords(me, 57005, 0, 0, 0)  
-                                            
-                                            
-                                            
+                                            -- Target body parts with realistic distribution
+                                            -- 60% chest, 30% pelvis, 10% legs (NO HEAD - too suspicious)
                                             local roll = math.random(1, 100)
                                             local targetBone
                                             if roll <= 60 then
-                                                targetBone = 24818  
+                                                targetBone = 24818  -- Chest (most common)
                                             elseif roll <= 90 then
-                                                targetBone = 11816  
+                                                targetBone = 11816  -- Pelvis
                                             else
-                                                targetBone = math.random(1, 2) == 1 and 36864 or 51826  
+                                                targetBone = math.random(1, 2) == 1 and 36864 or 51826  -- Left/Right leg
                                             end
                                             
                                             local targetBoneCoords = GetPedBoneCoords(target, targetBone, 0, 0, 0)
                                             
-                                            
+                                            -- Realistic accuracy: 65% hit rate (35% miss - human-like)
                                             local willMiss = math.random(1, 100) <= 35
                                             
-                                            
-                                            local aimOffsetX = math.random(-12, 12) / 100.0  
+                                            -- Add realistic aim offset randomization
+                                            local aimOffsetX = math.random(-12, 12) / 100.0  -- -0.12 to 0.12 (wider spread)
                                             local aimOffsetY = math.random(-12, 12) / 100.0
                                             local aimOffsetZ = math.random(-6, 6) / 100.0
                                             
-                                            
+                                            -- Increase offset for intentional miss (more realistic)
                                             if willMiss then
-                                                aimOffsetX = aimOffsetX * 6.0  
+                                                aimOffsetX = aimOffsetX * 6.0  -- Larger miss
                                                 aimOffsetY = aimOffsetY * 6.0
                                                 aimOffsetZ = aimOffsetZ * 4.0
                                             end
                                             
-                                            
+                                            -- Randomize damage (10-16 instead of fixed - more realistic)
                                             local randomDamage = math.random(10, 16)
                                             
-                                            
+                                            -- Shoot from player's hand to target with natural trajectory
                                             ShootSingleBulletBetweenCoords(
-                                                myHandCoords.x, myHandCoords.y, myHandCoords.z,  
+                                                myHandCoords.x, myHandCoords.y, myHandCoords.z,  -- From hand (realistic)
                                                 targetBoneCoords.x + aimOffsetX, targetBoneCoords.y + aimOffsetY, targetBoneCoords.z + aimOffsetZ,
                                                 randomDamage, true, weaponHash, me, true, true, -1.0
                                             )
                                             
-                                            
+                                            -- Update shot counter and time
                                             ec_acShotCounter[targetId] = ec_acShotCounter[targetId] + 1
                                             ec_acLastShotTime[targetId] = currentTime
                                         else
-                                            
+                                            -- Reset counter (switch to next target)
                                             ec_acShotCounter[targetId] = 0
                                         end
                                         
-                                        ::continue_ec_ac::  
+                                        ::continue_ec_ac::  -- Label for fire rate control skip
                                         
-                                        
+                                        -- NO magic bullets for EC_AC (too risky - instant ban)
                                     else
-                                        
+                                        -- Normal method (more aggressive)
                                         local boneCoords
                                         for _, boneId in ipairs(BONES) do
                                             local bc = GetPedBoneCoords(target, boneId, 0, 0, 0)
@@ -4706,7 +4376,7 @@ Citizen.CreateThread(function()
                                             )
                                         end
                                     end
-                                    end  
+                                    end  -- End of bypass checks
                                 else
                                 local pedHash = GetHashKey("a_m_y_business_03")
                                 local weaponHash = GetHashKey("WEAPON_COMBATPISTOL")
@@ -4777,21 +4447,21 @@ Citizen.CreateThread(function()
                                 SetModelAsNoLongerNeeded(pedHash)
                             end
                         end
-                    end 
-                        
+                    end -- End of targetsToShoot loop
+                        -- Fire rate control with AC-specific adjustments
                         if bypassFiveguard then
-                            
+                            -- Fiveguard: Random fire rate (200-400ms) to appear human-like
                             local randomDelay = math.random(200, 400)
                             Citizen.Wait(randomDelay)
                         elseif bypassEC_AC then
-                            
+                            -- EC_AC: Random fire rate (150-300ms) for anti-detection
                             local randomDelay = math.random(150, 300)
                             Citizen.Wait(randomDelay)
                         elseif bypassFiniAC then
-                            
+                            -- FiniAC: Use slower fire rate for safety (doubled)
                             Citizen.Wait(ragebotFireRate * 2)
                         else
-                            
+                            -- Normal fire rate
                             Citizen.Wait(ragebotFireRate)
                         end
                     else
@@ -4811,7 +4481,7 @@ Citizen.CreateThread(function()
                 ambani.UnhookNative(0x89CF5FF3D310A0DB)
                 ambani.UnhookNative(0xD0D1E559B46A6B5E)
                 
-                
+                -- Clean up shot counters
                 if fiveguardShotCounter then
                     fiveguardShotCounter = nil
                 end
@@ -4832,17 +4502,17 @@ Citizen.CreateThread(function()
     end
 end)
 
-
+-- Weapon Mods Thread
 Citizen.CreateThread(function()
     while true do
         local ped = PlayerPedId()
         
-        
+        -- Infinite Ammo
         if weaponModsEnabled.infiniteAmmo then
             SetPedInfiniteAmmoClip(ped, true)
         end
         
-        
+        -- No Reload
         if weaponModsEnabled.noReload then
             local _, currentWeapon = GetCurrentPedWeapon(ped, true)
             if currentWeapon and currentWeapon ~= 0 then
@@ -4851,7 +4521,7 @@ Citizen.CreateThread(function()
             end
         end
         
-        
+        -- Explosive Ammo
         if weaponModsEnabled.explosiveAmmo then
             SetPlayerWeaponDamageModifier(PlayerId(), 10.0)
             SetPlayerMeleeWeaponDamageModifier(PlayerId(), 10.0)
@@ -4865,7 +4535,7 @@ Citizen.CreateThread(function()
 end)
 
 
-
+-- Admin ESP: Detection Thread
 Citizen.CreateThread(function()
     while true do
         if adminESPEnabled then
@@ -4873,7 +4543,7 @@ Citizen.CreateThread(function()
             local myCoords = GetEntityCoords(myPed)
             local currentTime = GetGameTimer()
             
-            
+            -- Check all players
             for _, playerId in ipairs(GetActivePlayers()) do
                 if playerId ~= PlayerId() then
                     local targetPed = GetPlayerPed(playerId)
@@ -4881,9 +4551,9 @@ Citizen.CreateThread(function()
                         local targetCoords = GetEntityCoords(targetPed)
                         local distance = #(myCoords - targetCoords)
                         
-                        
+                        -- Only track players within detection radius
                         if distance <= adminDetectionRadius then
-                            
+                            -- Initialize tracking data if not exists
                             if not suspectedAdmins[playerId] then
                                 suspectedAdmins[playerId] = {
                                     noclipCount = 0,
@@ -4895,50 +4565,50 @@ Citizen.CreateThread(function()
                             
                             local data = suspectedAdmins[playerId]
                             
-                            
+                            -- Check if enough time has passed (check every 500ms)
                             if currentTime - data.lastCheck >= 500 then
                                 local moved = #(data.lastPos - targetCoords)
-                                local timeDiff = (currentTime - data.lastCheck) / 1000.0  
+                                local timeDiff = (currentTime - data.lastCheck) / 1000.0  -- Convert to seconds
                                 
-                                
+                                -- Check for noclip indicators
                                 local isInVehicle = IsPedInAnyVehicle(targetPed, false)
                                 local groundZ = 0.0
                                 local foundGround, groundZ = GetGroundZFor_3dCoord(targetCoords.x, targetCoords.y, targetCoords.z + 100.0, groundZ, false)
                                 
-                                
+                                -- Noclip detection: Moving fast vertically without vehicle, or moving through walls
                                 if not isInVehicle and moved > 5.0 and timeDiff > 0 then
-                                    local speed = moved / timeDiff  
+                                    local speed = moved / timeDiff  -- meters per second
                                     local verticalMove = math.abs(targetCoords.z - data.lastPos.z)
                                     
-                                    
+                                    -- Suspicious if: moving very fast (>20m/s) OR significant vertical movement (>3m) without falling
                                     if speed > 20.0 or (verticalMove > 3.0 and targetCoords.z > data.lastPos.z) then
                                         data.noclipCount = data.noclipCount + 1
                                         
-                                        
+                                        -- Confirm as admin after 3 suspicious movements
                                         if data.noclipCount >= 3 and not confirmedAdmins[playerId] then
                                             confirmedAdmins[playerId] = true
                                             local playerName = GetPlayerName(playerId)
                                             ShowNotification("Admin ESP", "Admin detected: " .. playerName .. " (ID: " .. playerId .. ")", 4000)
                                         end
                                     else
-                                        
+                                        -- Decay suspicion if moving normally
                                         data.noclipCount = math.max(0, data.noclipCount - 0.5)
                                     end
                                 end
                                 
-                                
+                                -- Update tracking data
                                 data.lastPos = targetCoords
                                 data.lastCheck = currentTime
                                 data.lastGroundZ = groundZ
                             end
                         else
-                            
+                            -- Player left detection radius, keep them in suspected list but don't update
                         end
                     end
                 end
             end
             
-            
+            -- Clean up disconnected players
             for playerId, _ in pairs(suspectedAdmins) do
                 if not NetworkIsPlayerActive(playerId) then
                     suspectedAdmins[playerId] = nil
@@ -4946,16 +4616,16 @@ Citizen.CreateThread(function()
                 end
             end
             
-            Citizen.Wait(100)  
+            Citizen.Wait(100)  -- Check every 100ms
         else
-            Citizen.Wait(1000)  
+            Citizen.Wait(1000)  -- Sleep when disabled
         end
     end
 end)
 
-
+-- Admin ESP: Rendering Thread
 Citizen.CreateThread(function()
-    
+    -- Rainbow color function
     local function getRainbowColor(time)
         local frequency = 0.003
         local r = math.sin(frequency * time + 0) * 0.5 + 0.5
@@ -4964,32 +4634,32 @@ Citizen.CreateThread(function()
         return r, g, b
     end
     
-    
+    -- Skeleton bones
     local skeletonBones = {
-        
-        {31086, 24818},  
-        
-        {24818, 24817},  
-        {24817, 24816},  
-        {24816, 11816},  
-        
-        {24818, 64016},  
-        {64016, 45509},  
-        {45509, 61163},  
-        {61163, 18905},  
-        
-        {24818, 10706},  
-        {10706, 40269},  
-        {40269, 28252},  
-        {28252, 57005},  
-        
-        {11816, 58271},  
-        {58271, 63931},  
-        {63931, 14201},  
-        
-        {11816, 51826},  
-        {51826, 36864},  
-        {36864, 52301}   
+        -- Head to spine
+        {31086, 24818},  -- Head to upper spine
+        -- Spine
+        {24818, 24817},  -- Upper spine to mid spine
+        {24817, 24816},  -- Mid spine to lower spine
+        {24816, 11816},  -- Lower spine to pelvis
+        -- Left arm
+        {24818, 64016},  -- Spine to left clavicle
+        {64016, 45509},  -- Left clavicle to left upper arm
+        {45509, 61163},  -- Left upper arm to left forearm
+        {61163, 18905},  -- Left forearm to left hand
+        -- Right arm
+        {24818, 10706},  -- Spine to right clavicle
+        {10706, 40269},  -- Right clavicle to right upper arm
+        {40269, 28252},  -- Right upper arm to right forearm
+        {28252, 57005},  -- Right forearm to right hand
+        -- Left leg
+        {11816, 58271},  -- Pelvis to left thigh
+        {58271, 63931},  -- Left thigh to left calf
+        {63931, 14201},  -- Left calf to left foot
+        -- Right leg
+        {11816, 51826},  -- Pelvis to right thigh
+        {51826, 36864},  -- Right thigh to right calf
+        {36864, 52301}   -- Right calf to right foot
     }
     
     while true do
@@ -4999,7 +4669,7 @@ Citizen.CreateThread(function()
             local currentTime = GetGameTimer()
             local r, g, b = getRainbowColor(currentTime)
             
-            
+            -- Render ESP for confirmed admins
             for playerId, _ in pairs(confirmedAdmins) do
                 if NetworkIsPlayerActive(playerId) then
                     local targetPed = GetPlayerPed(playerId)
@@ -5007,19 +4677,19 @@ Citizen.CreateThread(function()
                         local targetCoords = GetEntityCoords(targetPed)
                         local distance = #(myCoords - targetCoords)
                         
-                        
+                        -- Only render if within reasonable distance
                         if distance <= 500.0 then
                             local onScreen, screenX, screenY = GetScreenCoordFromWorldCoord(targetCoords.x, targetCoords.y, targetCoords.z + 1.0)
                             
                             if onScreen then
-                                
+                                -- Draw name
                                 if adminESPShowNames then
                                     local playerName = GetPlayerName(playerId)
                                     local text = playerName .. " [ADMIN] (" .. math.floor(distance) .. "m)"
                                     ambani.Draw.Text(text, screenX, screenY, 12, r, g, b, 1.0, true)
                                 end
                                 
-                                
+                                -- Draw skeleton
                                 if adminESPShowSkeleton then
                                     for _, bonePair in ipairs(skeletonBones) do
                                         local bone1Coords = GetPedBoneCoords(targetPed, bonePair[1], 0, 0, 0)
@@ -5034,13 +4704,13 @@ Citizen.CreateThread(function()
                                     end
                                 end
                                 
-                                
+                                -- Draw tracers
                                 if adminESPShowTracers then
                                     local camCoords = GetGameplayCamCoord()
                                     local onScreenCam, camX, camY = GetScreenCoordFromWorldCoord(camCoords.x, camCoords.y, camCoords.z)
                                     
                                     if onScreenCam and onScreen then
-                                        
+                                        -- Tracer from bottom center of screen to target
                                         ambani.Draw.Line(0.5, 1.0, screenX, screenY, r, g, b, 1.0, 2)
                                     end
                                 end
@@ -5050,9 +4720,9 @@ Citizen.CreateThread(function()
                 end
             end
             
-            Citizen.Wait(0)  
+            Citizen.Wait(0)  -- Render every frame
         else
-            Citizen.Wait(1000)  
+            Citizen.Wait(1000)  -- Sleep when disabled
         end
     end
 end)
